@@ -1,0 +1,7 @@
+#ignore /Directories 
+Data/
+output/
+
+#ignore /File types
+*.csv
+*.log.txt
