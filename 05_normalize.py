@@ -1,6 +1,6 @@
-# 04_normalize.py — Normalization: displacements, sin/cos COG, z-score
-# Input:  output/03_sampled/*.csv
-# Output: output/04_normalized/*.csv + scalers.pkl
+# 05_normalize.py — Normalization: displacements, sin/cos COG, z-score
+# Input:  output/04_trajectories/*.csv 
+# Output: output/05_normalized/*.csv + scalers.pkl
 
 import pandas as pd
 import numpy as np
@@ -8,24 +8,18 @@ from pathlib import Path
 import joblib
 from sklearn.preprocessing import StandardScaler
 
-
-# dt is kept as-is (time since last real point after interpolation), time since last point is constant as per sample rate
-# cog is encoded as sin/cos (circular variable)
-# x, y → replaced by dx, dy (displacement between consecutive points)
-# sog is z-scored directly (clip outliers first)
-NUMERIC_FEATURES = ['dx', 'dy', 'sog', 'cog_sin', 'cog_cos', 'dt'] 
+NUMERIC_FEATURES = ['dx', 'dy', 'sog', 'cog_sin', 'cog_cos', 'dt']
 
 
 def compute_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Per-vessel: compute dx/dy displacements and sin/cos COG encoding."""
-    df = df.copy().sort_values('t_utc')
+    """Compute dx/dy displacements and sin/cos COG encoding across all tracks."""
+    df = df.copy().sort_values(['track_id', 't_utc'])
 
-    # dx, dy: displacement from previous point (first point → 0)
-    df['dx'] = df['x'].diff().fillna(0)
-    df['dy'] = df['y'].diff().fillna(0)
+    # diff() per track — no apply() needed, track_id stays in df
+    df['dx'] = df.groupby('track_id')['x'].diff().fillna(0)
+    df['dy'] = df.groupby('track_id')['y'].diff().fillna(0)
 
-    # COG: circular encoding
-    cog_rad = np.deg2rad(df['cog'])
+    cog_rad = np.deg2rad(df['cog'].fillna(360))
     df['cog_sin'] = np.sin(cog_rad)
     df['cog_cos'] = np.cos(cog_rad)
 
@@ -33,10 +27,9 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False, verbose=True):
-    """Compute features, then z-score numeric columns."""
+    """Compute features per track, then z-score."""
 
-    # Per-vessel feature computation
-    df = df.groupby('vessel_id', group_keys=False).apply(compute_features, include_groups=False)
+    df = compute_features(df)
 
     if fit:
         scaler = StandardScaler()
@@ -52,17 +45,20 @@ def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False, verbose=True):
         index=df.index
     )
 
-    # Drop replaced columns, keep everything else (vessel_id, t_utc, x, y for reference)
-    df_out = pd.concat([df.drop(columns=NUMERIC_FEATURES), df_numeric], axis=1)
+    keep_cols = ['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog']
+    if 'window_end_t_utc' in df.columns:
+        keep_cols.append('window_end_t_utc')
+
+    df_out = pd.concat([df[keep_cols], df_numeric], axis=1)
 
     if verbose:
-        print(f"  Normalized {len(df):,} rows")
+        print(f"  Normalized {len(df):,} rows ({df['track_id'].nunique():,} tracks)")
     return df_out, scaler
 
 
 if __name__ == "__main__":
-    input_dir  = Path("output/03_sampled")
-    output_dir = Path("output/04_normalized")
+    input_dir  = Path("output/04_trajectories")
+    output_dir = Path("output/05_normalized")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     input_files = sorted(input_dir.glob("*.csv"))
@@ -70,9 +66,8 @@ if __name__ == "__main__":
         print(f"No CSV files found in {input_dir}")
         raise SystemExit(1)
 
-    # TODO: fit scaler on train split only, apply to val/test
     scalers = {}
-    total_rows = 0
+    total_rows = total_tracks = 0
 
     for src in input_files:
         print(f"\n{'='*60}")
@@ -80,7 +75,10 @@ if __name__ == "__main__":
         print(f"{'='*60}")
 
         df = pd.read_csv(src, parse_dates=['t_utc']).copy()
+        if 'window_end_t_utc' in df.columns:
+            df['window_end_t_utc'] = pd.to_datetime(df['window_end_t_utc'])
         n_rows = len(df)
+        n_tracks = df['track_id'].nunique()
 
         df_norm, scaler = normalize_dataset(df, fit=True, verbose=True)
         scalers[src.name] = {
@@ -91,13 +89,14 @@ if __name__ == "__main__":
 
         dst = output_dir / src.name
         df_norm.to_csv(dst, index=False)
-        print(f"Saved: {dst}")
+        print(f"Saved: {dst} ({len(df_norm):,} rows, {df_norm['track_id'].nunique():,} tracks)")
 
         total_rows += n_rows
+        total_tracks += n_tracks
 
     joblib.dump(scalers, output_dir / "scalers.pkl")
 
     print(f"\n{'='*60}")
-    print(f"NORMALIZED {total_rows:,} rows across {len(input_files)} files")
-    print(f"Scalers saved to output/04_normalized/")
+    print(f"NORMALIZED {total_rows:,} rows ({total_tracks:,} tracks) across {len(input_files)} files")
+    print(f"Scalers saved to {output_dir}/")
     print(f"{'='*60}")
