@@ -44,6 +44,37 @@ def add_utm_coordinates(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
     return df
 
 
+def remove_position_jumps(df: pd.DataFrame, threshold=2.0) -> pd.DataFrame:
+    """Delete rows where displacement exceeds threshold × speed-implied distance."""
+    df = df.copy().sort_values('t_utc').reset_index(drop=True)
+
+    t = df['t_utc'].astype(np.int64) / 1e9          # → seconds
+    dt = np.diff(t, prepend=np.nan)
+    dx = np.diff(df['x'].values, prepend=np.nan)
+    dy = np.diff(df['y'].values, prepend=np.nan)
+    actual_dist = np.sqrt(dx**2 + dy**2)             # metres
+
+    speed_ms = df['sog'].values * 1852 / 3600        # knots → m/s
+    speed_avg = (speed_ms + np.roll(speed_ms, 1)) / 2
+    speed_avg[0] = speed_ms[0]
+    expected_dist = speed_avg * np.abs(dt)
+
+    is_jump = actual_dist > threshold * np.maximum(expected_dist, 10)
+    is_jump[0] = False
+
+    return df[~is_jump].reset_index(drop=True)
+
+
+def remove_fast_vessels(df: pd.DataFrame, max_sog=30, verbose=True) -> pd.DataFrame:
+    """Remove all rows belonging to vessels that ever exceed max_sog knots."""
+    fast_ids = df.groupby('vessel_id')['sog'].max()
+    fast_ids = fast_ids[fast_ids > max_sog].index
+    mask = df['vessel_id'].isin(fast_ids)
+    if verbose:
+        print(f"  Fast vessel filter: removed {mask.sum():,} rows "
+              f"({fast_ids.nunique()} vessels exceeding {max_sog} kn)")
+    return df[~mask].reset_index(drop=True)
+
 # ── Main clean function ───────────────────────────────────────────────────────
 def clean(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
     n0 = len(df)
@@ -93,6 +124,14 @@ def clean(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
         cols = cols[:lon_idx+1] + ['x', 'y'] + cols[lon_idx+1:]
         df = df[cols]
 
+    #Remove position jumps per vessel ──────────────────────────────
+    n_before_jumps = len(df)
+    df = df.groupby('vessel_id', group_keys=False).apply(remove_position_jumps)
+    if verbose:
+        print(f"  Jump filter removed: {n_before_jumps - len(df):,}")
+
+    df = remove_fast_vessels(df, max_sog=30, verbose=verbose)
+
     if verbose:
         print(f"  Rows: {n0:,} → {len(df):,} (removed {n0 - len(df):,})")
 
@@ -139,5 +178,3 @@ if __name__ == "__main__":
     print(f"DONE  {total_in:,} → {total_out:,} rows")
     print(f"{'='*60}")
 
-
-#TODO: outlier filter for velocity, sog and jumps in position
