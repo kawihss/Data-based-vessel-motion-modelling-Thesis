@@ -340,12 +340,12 @@ if __name__ == "__main__":
              'output': 'output/01_raw/processed_ais_bremerhaven_20180404.csv',
              'parser': 'kiel'
         },
-        {
-            'name': 'marinecadastre',
-            'file': 'Data/Mississippi/AIS_2024_01_01.csv',
-            'output': 'output/01_raw/processed_ais_marinecadastre_2024_01.csv',
-            'parser': 'marinecadastre'
-        }
+        #{
+        #    'name': 'marinecadastre',
+        #    'file': 'Data/Mississippi/AIS_2024_01_01.csv',
+        #    'output': 'output/01_raw/processed_ais_marinecadastre_2024_01.csv',
+        #    'parser': 'marinecadastre'
+        #}
     ]
 
     # Create output directory

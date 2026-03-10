@@ -1,38 +1,58 @@
-# 04_normalize.py — StandardScaler normalization (placeholder)
+# 04_normalize.py — Normalization: displacements, sin/cos COG, z-score
 # Input:  output/03_sampled/*.csv
-# Output: output/04_normalized/*.csv + scaler.pkl
-
-#PALCEHOLDER using z score normalization DO RESEARCH ON BEST PRACTICES FOR NORMALIZATION IN TIME SERIES TRAJECTORY 
-
+# Output: output/04_normalized/*.csv + scalers.pkl
 
 import pandas as pd
 import numpy as np
 from pathlib import Path
 import joblib
 from sklearn.preprocessing import StandardScaler
-from datetime import datetime
-import json
 
-NUMERIC_FEATURES = ['x', 'y', 'sog', 'cog', 'dt']  # to be normalized
+
+# dt is kept as-is (time since last real point after interpolation), time since last point is constant as per sample rate
+# cog is encoded as sin/cos (circular variable)
+# x, y → replaced by dx, dy (displacement between consecutive points)
+# sog is z-scored directly (clip outliers first)
+NUMERIC_FEATURES = ['dx', 'dy', 'sog', 'cog_sin', 'cog_cos', 'dt'] 
+
+
+def compute_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Per-vessel: compute dx/dy displacements and sin/cos COG encoding."""
+    df = df.copy().sort_values('t_utc')
+
+    # dx, dy: displacement from previous point (first point → 0)
+    df['dx'] = df['x'].diff().fillna(0)
+    df['dy'] = df['y'].diff().fillna(0)
+
+    # COG: circular encoding
+    cog_rad = np.deg2rad(df['cog'])
+    df['cog_sin'] = np.sin(cog_rad)
+    df['cog_cos'] = np.cos(cog_rad)
+
+    return df
+
 
 def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False, verbose=True):
-    """Normalize numeric features. fit=True computes scaler params on this data."""
+    """Compute features, then z-score numeric columns."""
+
+    # Per-vessel feature computation
+    df = df.groupby('vessel_id', group_keys=False).apply(compute_features, include_groups=False)
+
     if fit:
         scaler = StandardScaler()
         scaler.fit(df[NUMERIC_FEATURES])
         if verbose:
             print("  Scaler fitted:")
             for feat, mu, sigma in zip(NUMERIC_FEATURES, scaler.mean_, scaler.scale_):
-                print(f"    {feat}: μ={mu:.1f}, σ={sigma:.1f}")
+                print(f"    {feat}: μ={mu:.4f}, σ={sigma:.4f}")
 
-    # Apply normalization
     df_numeric = pd.DataFrame(
         scaler.transform(df[NUMERIC_FEATURES]),
         columns=[f'{feat}_norm' for feat in NUMERIC_FEATURES],
         index=df.index
     )
 
-    # Combine with non-numeric columns
+    # Drop replaced columns, keep everything else (vessel_id, t_utc, x, y for reference)
     df_out = pd.concat([df.drop(columns=NUMERIC_FEATURES), df_numeric], axis=1)
 
     if verbose:
@@ -50,7 +70,6 @@ if __name__ == "__main__":
         print(f"No CSV files found in {input_dir}")
         raise SystemExit(1)
 
-    # Placeholder: normalize each file independently
     # TODO: fit scaler on train split only, apply to val/test
     scalers = {}
     total_rows = 0
@@ -65,17 +84,17 @@ if __name__ == "__main__":
 
         df_norm, scaler = normalize_dataset(df, fit=True, verbose=True)
         scalers[src.name] = {
-            'mean': scaler.mean_.tolist(),
-            'scale': scaler.scale_.tolist()
+            'mean':  scaler.mean_.tolist(),
+            'scale': scaler.scale_.tolist(),
+            'features': NUMERIC_FEATURES
         }
 
         dst = output_dir / src.name
         df_norm.to_csv(dst, index=False)
-        print(f"✓ Saved: {dst}")
+        print(f"Saved: {dst}")
 
         total_rows += n_rows
 
-   
     joblib.dump(scalers, output_dir / "scalers.pkl")
 
     print(f"\n{'='*60}")

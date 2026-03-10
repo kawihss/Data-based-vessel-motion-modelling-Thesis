@@ -1,6 +1,6 @@
 # 02_clean.py — AIS Cleaning: coordinate conversion, deduplication, MMSI hashing
 # Input:  output/01_raw/*.csv
-# Output: output/02_cleaned/*.csv
+# Output: output/02_cleaned/*.csv this is what we can publish, features output in 04_normalize.py
 
 import pandas as pd
 import numpy as np

@@ -40,30 +40,35 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
     df = split_long_gaps(df, max_gap_s=3 * freq_s)
     df = df.sort_values(['vessel_id', 't_utc']).copy()
 
-    # Compute dt feature (seconds since previous point) before resampling
-    df['dt'] = df.groupby('vessel_id')['t_utc'].diff().dt.total_seconds()
-    df['dt'] = df['dt'].fillna(0)
-
     resampled_parts = []
 
     for vid, g in df.groupby('vessel_id'):
         g = g.sort_values('t_utc')
+        real_times = g['t_utc'].values  # ++ save original timestamps
+
         g = g.set_index('t_utc')
 
-        # new uniform time index within vessel time span
         t_start = g.index[0].ceil(f'{freq_s}s')
         t_end   = g.index[-1].floor(f'{freq_s}s')
         if t_end <= t_start:
             continue
         new_idx = pd.date_range(t_start, t_end, freq=f'{freq_s}s')
 
-        # reindex and interpolate numeric columns in time
         g_resampled = g.reindex(g.index.union(new_idx))
         num_cols = g.select_dtypes(include=[np.number]).columns.tolist()
         if 'dt' in num_cols:
-            num_cols.remove('dt')  # dt will be recomputed after resampling
+            num_cols.remove('dt')
         g_resampled[num_cols] = g_resampled[num_cols].interpolate(method='time')
         g_resampled = g_resampled.loc[new_idx]
+
+        # ++ compute dt_quality: seconds to nearest real AIS point
+        new_times_s   = new_idx.astype(np.int64) / 1e9
+        real_times_s  = pd.DatetimeIndex(real_times).astype(np.int64) / 1e9
+        idx           = np.searchsorted(real_times_s, new_times_s).clip(0, len(real_times_s) - 1)
+        idx_prev      = (idx - 1).clip(0, len(real_times_s) - 1)
+        dist_next     = np.abs(new_times_s - real_times_s[idx])
+        dist_prev     = np.abs(new_times_s - real_times_s[idx_prev])
+        g_resampled['dt'] = np.minimum(dist_next, dist_prev)  #
 
         g_resampled['vessel_id'] = vid
         g_resampled['dataset']   = g['dataset'].iloc[0]
@@ -76,7 +81,6 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
 
     # recompute dt on the resampled grid
     out = out.sort_values(['vessel_id', 't_utc'])
-    out['dt'] = out.groupby('vessel_id')['t_utc'].diff().dt.total_seconds()
     out['dt'] = out['dt'].fillna(0)
 
     return out
