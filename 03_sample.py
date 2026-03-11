@@ -58,7 +58,18 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
         num_cols = g.select_dtypes(include=[np.number]).columns.tolist()
         if 'dt' in num_cols:
             num_cols.remove('dt')
-        g_resampled[num_cols] = g_resampled[num_cols].interpolate(method='time')
+        spatial_cols     = [c for c in ['x', 'y'] if c in num_cols]
+        non_spatial_cols = [c for c in num_cols if c not in spatial_cols]
+
+        if spatial_cols:
+            method = 'spline' if len(g) >= 4 else 'time'
+            g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(
+                method= method, order=3
+            )
+        if non_spatial_cols:
+            g_resampled[non_spatial_cols] = g_resampled[non_spatial_cols].interpolate(
+                method='time'
+            )        
         g_resampled = g_resampled.loc[new_idx]
 
         # ++ compute dt_quality: seconds to nearest real AIS point
