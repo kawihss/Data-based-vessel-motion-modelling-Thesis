@@ -77,7 +77,7 @@ def apply_speed_filters(df: pd.DataFrame) -> pd.DataFrame:
     
     stats['low_speed_frac'] = stats['low_speed_count'] / stats['total_points']
     
-    # Filter IDs based on your logic:
+    # Filter IDs based on criteria:
     # 1. Max SOG must be >= 1.0 (removes anchored ships)
     # 2. Less than 30% of points can be < 2.0 knots
     valid_mask = (stats['max_sog'] >= MIN_SOG) & (stats['low_speed_frac'] <= LOW_SPEED_FRAC_MAX)
@@ -115,10 +115,12 @@ if __name__ == '__main__':
             
         # Combine all segments for this file
         processed_df = pd.concat(all_segments, ignore_index=True)
-        
+        n_before = processed_df['track_id'].nunique()  
+
         # Apply the anchoring and speed filters
         filtered_df = apply_speed_filters(processed_df)
-        
+        n_after = filtered_df['track_id'].nunique()    
+        print(f"  Segments: {n_before} generated → {n_after} after speed filter") 
         # Save
         dst = output_dir / src.name
         filtered_df.to_csv(dst, index=False)

@@ -340,12 +340,12 @@ if __name__ == "__main__":
              'output': 'output/01_raw/processed_ais_bremerhaven_20180404.csv',
              'parser': 'kiel'
         },
-        #{
-        #    'name': 'marinecadastre',
-        #    'file': 'Data/Mississippi/AIS_2024_01_01.csv',
-        #    'output': 'output/01_raw/processed_ais_marinecadastre_2024_01.csv',
-        #    'parser': 'marinecadastre'
-        #}
+        {
+            'name': 'marinecadastre',
+            'file': 'Data/Mississippi/AIS_2024_01_01.csv',
+            'output': 'output/01_raw/processed_ais_marinecadastre_2024_01.csv',
+            'parser': 'marinecadastre'
+        }
     ]
 
     # Create output directory
@@ -389,7 +389,9 @@ if __name__ == "__main__":
             print(f"  Records: {len(df):,} from {df['vessel_id'].nunique()} vessels")
 
             # Collect for combined dataset
-            all_data.append(df)
+            #all_data.append(df) # doesnt make sense to combine the datasets at this stage 
+            # since we will be resampling them separately in the next step, and they may have different frequencies and time ranges. 
+            # We can combine them after resampling in the next step. Keeping functions for now in case we want to combine them at this stage later on.
         else:
             print(f"✗ Failed to process {dataset_config['name']}")
 
@@ -403,7 +405,7 @@ if __name__ == "__main__":
         combined_df = pd.concat(all_data, ignore_index=True)
         combined_df = combined_df.sort_values(['dataset', 'vessel_id', 't_utc']).reset_index(drop=True)
 
-        combined_output = 'output/processed_ais_combined.csv'
+        combined_output = 'output/01_raw/processed_ais_combined.csv'
         combined_df.to_csv(combined_output, index=False)
 
         print(f"\nCombined dataset statistics:")
