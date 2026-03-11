@@ -35,7 +35,7 @@ def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False, verbose=True):
         scaler = StandardScaler()
         scaler.fit(df[NUMERIC_FEATURES])
         if verbose:
-            print("  Scaler fitted:")
+            print(" Scaler fitted:")
             for feat, mu, sigma in zip(NUMERIC_FEATURES, scaler.mean_, scaler.scale_):
                 print(f"    {feat}: μ={mu:.4f}, σ={sigma:.4f}")
 
@@ -57,46 +57,67 @@ def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False, verbose=True):
 
 
 if __name__ == "__main__":
-    input_dir  = Path("output/04_trajectories")
+    input_dir = Path("output/04_trajectories")
     output_dir = Path("output/05_normalized")
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    input_files = sorted(input_dir.glob("*.csv"))
-    if not input_files:
-        print(f"No CSV files found in {input_dir}")
-        raise SystemExit(1)
-
-    scalers = {}
-    total_rows = total_tracks = 0
-
-    for src in input_files:
-        print(f"\n{'='*60}")
-        print(f"Normalizing: {src.name}")
-        print(f"{'='*60}")
-
-        df = pd.read_csv(src, parse_dates=['t_utc']).copy()
+    
+    # Group files by dataset (train/val/test variants)
+    train_files = sorted(input_dir.glob("train_*.csv"))
+    val_files   = sorted(input_dir.glob("val_*.csv"))
+    test_files  = sorted(input_dir.glob("test_*.csv"))
+    
+    # Fit scaler ON TRAIN ONLY
+    print("Fitting scaler on TRAIN data...")
+    all_train_dfs = []
+    for train_file in train_files:
+        df = pd.read_csv(train_file, parse_dates=['t_utc'])
         if 'window_end_t_utc' in df.columns:
             df['window_end_t_utc'] = pd.to_datetime(df['window_end_t_utc'])
-        n_rows = len(df)
-        n_tracks = df['track_id'].nunique()
-
-        df_norm, scaler = normalize_dataset(df, fit=True, verbose=True)
-        scalers[src.name] = {
-            'mean':  scaler.mean_.tolist(),
-            'scale': scaler.scale_.tolist(),
-            'features': NUMERIC_FEATURES
-        }
-
-        dst = output_dir / src.name
-        df_norm.to_csv(dst, index=False)
-        print(f"Saved: {dst} ({len(df_norm):,} rows, {df_norm['track_id'].nunique():,} tracks)")
-
-        total_rows += n_rows
-        total_tracks += n_tracks
-
+        all_train_dfs.append(df)
+    
+    train_combined = pd.concat(all_train_dfs, ignore_index=True)
+    _, scaler = normalize_dataset(train_combined, fit=True, verbose=True)
+    
+    print(f"✅ Scaler fitted on {len(train_combined):,} train rows")
+    
+    # Process ALL splits (train/val/test) with SAME scaler
+    all_files = [(f"train ({len(train_files)} files)", train_files),
+                 (f"val ({len(val_files)} files)", val_files),
+                 (f"test ({len(test_files)} files)", test_files)]
+    
+    total_rows = total_tracks = 0
+    scalers = {"global_scaler": {"mean": scaler.mean_.tolist(), "scale": scaler.scale_.tolist()}}
+    
+    for split_name, files in all_files:
+        if not files:
+            print(f"No {split_name} files found")
+            continue
+            
+        print(f"\n{'='*60}")
+        print(f"Normalizing {split_name}")
+        print(f"{'='*60}")
+        
+        for src in files:
+            df = pd.read_csv(src, parse_dates=['t_utc'])
+            if 'window_end_t_utc' in df.columns:
+                df['window_end_t_utc'] = pd.to_datetime(df['window_end_t_utc'])
+            
+            df_norm, _ = normalize_dataset(df, scaler=scaler, fit=False, verbose=False)
+            
+            dst = output_dir / src.name
+            df_norm.to_csv(dst, index=False)
+            n_rows = len(df_norm)
+            n_tracks = df_norm['track_id'].nunique()
+            
+            print(f"  {src.name} → {n_rows:,} rows, {n_tracks:,} tracks")
+            total_rows += n_rows
+            total_tracks += n_tracks
+        
+        print(f"{split_name} complete")
+    
+    # Save scaler
     joblib.dump(scalers, output_dir / "scalers.pkl")
-
     print(f"\n{'='*60}")
-    print(f"NORMALIZED {total_rows:,} rows ({total_tracks:,} tracks) across {len(input_files)} files")
-    print(f"Scalers saved to {output_dir}/")
+    print(f"NORMALIZED {total_rows:,} rows ({total_tracks:,} tracks)")
+    print(f"Train-only scaler saved: {output_dir}/scalers.pkl")
     print(f"{'='*60}")

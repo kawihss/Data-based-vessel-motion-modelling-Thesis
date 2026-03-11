@@ -2,10 +2,12 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import timedelta
-   # --- TRAIN/TEST SPLIT STRATEGY ---
-    # Note: To avoid data leakage, you should split 'input_files' or unique 'vessel_ids'
-    # into two lists (train_list, test_list) before processing. 
-    # Never split the resulting 'track_id's randomly!
+
+# --- TRAIN/TEST SPLIT STRATEGY ---
+# Note: To avoid data leakage, you should split 'input_files' or unique 'vessel_ids'
+# into two lists (train_list, test_list) before processing. 
+# Never split the resulting 'track_id's randomly!
+
 # --- CONFIGURATION ---
 WINDOW_DUR = timedelta(minutes=10)
 PRED_HORIZON = timedelta(minutes=2)
@@ -98,30 +100,60 @@ if __name__ == '__main__':
     global_track_counter = 0
     
     for src in input_files:
-        print(f"\nProcessing: {src.name}")
+        print(f"\n{'='*60}")
+        print(f"Processing: {src.name}")
+        print(f"{'='*60}")
         df = pd.read_csv(src, parse_dates=['t_utc'])
         freq_s = infer_freq_from_name(src.name)
         
+        # Generate ALL segments first
         all_segments = []
         vessel_groups = df.groupby('vessel_id')
         
         for _, v_data in vessel_groups:
-            segments, global_track_counter = create_samples_efficient(v_data, freq_s, global_track_counter)
+            segments, global_track_counter = create_samples_efficient(
+                v_data, freq_s, global_track_counter
+            )
             all_segments.extend(segments)
-            
+        
         if not all_segments:
             print(f"No valid segments for {src.name}")
             continue
-            
-        # Combine all segments for this file
+        
+        # Combine + speed filter FIRST
         processed_df = pd.concat(all_segments, ignore_index=True)
-        n_before = processed_df['track_id'].nunique()  
-
-        # Apply the anchoring and speed filters
         filtered_df = apply_speed_filters(processed_df)
-        n_after = filtered_df['track_id'].nunique()    
-        print(f"  Segments: {n_before} generated → {n_after} after speed filter") 
-        # Save
-        dst = output_dir / src.name
-        filtered_df.to_csv(dst, index=False)
-        print(f"Saved {len(filtered_df['track_id'].unique())} tracks to {dst}")
+        
+        if len(filtered_df) == 0:
+            print(f"No valid tracks after filtering for {src.name}")
+            continue
+        
+        n_total_tracks = filtered_df['track_id'].nunique()
+        print(f"Generated {n_total_tracks:,} tracks after speed filtering")
+        
+        # === NOW SPLIT TRACKS 60/20/20 ===
+        np.random.seed(42)
+        all_tracks = filtered_df['track_id'].unique()
+        np.random.shuffle(all_tracks)
+        
+        split_train = int(0.60 * len(all_tracks))
+        split_val   = int(0.80 * len(all_tracks))
+        
+        tracks_train = set(all_tracks[:split_train])
+        tracks_val   = set(all_tracks[split_train:split_val])
+        tracks_test  = set(all_tracks[split_val:])
+        
+        print(f"Track split (post-filter): {len(tracks_train):,} train | "
+              f"{len(tracks_val):,} val | {len(tracks_test):,} test "
+              f"(total {n_total_tracks:,} tracks)")
+        
+        # Save splits
+        for split_name, track_set in [("train", tracks_train), 
+                                      ("val", tracks_val), 
+                                      ("test", tracks_test)]:
+            split_df = filtered_df[filtered_df['track_id'].isin(track_set)]
+            dst = output_dir / f"{split_name}_{src.name}"
+            split_df.to_csv(dst, index=False)
+            print(f"  Saved {len(track_set):,} {split_name} tracks → {dst}")
+               
+        print(f"{src.name} complete")
