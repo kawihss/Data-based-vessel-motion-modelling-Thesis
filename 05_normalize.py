@@ -52,7 +52,7 @@ def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False, verbose=True):
     df_out = pd.concat([df[keep_cols], df_numeric], axis=1)
 
     if verbose:
-        print(f"  Normalized {len(df):,} rows ({df['track_id'].nunique():,} tracks)")
+        print(f" Normalized {len(df):,} rows ({df['track_id'].nunique():,} tracks)")
     return df_out, scaler
 
 
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     train_combined = pd.concat(all_train_dfs, ignore_index=True)
     _, scaler = normalize_dataset(train_combined, fit=True, verbose=True)
     
-    print(f"✅ Scaler fitted on {len(train_combined):,} train rows")
+    print(f"Scaler fitted on {len(train_combined):,} train rows")
     
     # Process ALL splits (train/val/test) with SAME scaler
     all_files = [(f"train ({len(train_files)} files)", train_files),

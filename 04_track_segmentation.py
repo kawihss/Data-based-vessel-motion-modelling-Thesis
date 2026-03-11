@@ -106,54 +106,63 @@ if __name__ == '__main__':
         df = pd.read_csv(src, parse_dates=['t_utc'])
         freq_s = infer_freq_from_name(src.name)
         
-        # Generate ALL segments first
-        all_segments = []
-        vessel_groups = df.groupby('vessel_id')
+        # 1. IDENTIFY UNIQUE VESSELS AND SHUFFLE
+        np.random.seed(42)
+        all_vessels = df['vessel_id'].unique()
+        np.random.shuffle(all_vessels)
         
-        for _, v_data in vessel_groups:
+        # 2. DEFINE SPLIT BOUNDARIES FOR VESSELS
+        n_vessels = len(all_vessels)
+        split_train = int(0.60 * n_vessels)
+        split_val   = int(0.80 * n_vessels)
+        
+        vessels_train = set(all_vessels[:split_train])
+        vessels_val   = set(all_vessels[split_train:split_val])
+        vessels_test  = set(all_vessels[split_val:])
+        
+        # Containers for segments
+        split_segments = {
+            "train": [],
+            "val": [],
+            "test": []
+        }
+        
+        # 3. GENERATE SEGMENTS AND ASSIGN BY VESSEL ID
+        vessel_groups = df.groupby('vessel_id')
+        for v_id, v_data in vessel_groups:
             segments, global_track_counter = create_samples_efficient(
                 v_data, freq_s, global_track_counter
             )
-            all_segments.extend(segments)
-        
-        if not all_segments:
-            print(f"No valid segments for {src.name}")
-            continue
-        
-        # Combine + speed filter FIRST
-        processed_df = pd.concat(all_segments, ignore_index=True)
-        filtered_df = apply_speed_filters(processed_df)
-        
-        if len(filtered_df) == 0:
-            print(f"No valid tracks after filtering for {src.name}")
-            continue
-        
-        n_total_tracks = filtered_df['track_id'].nunique()
-        print(f"Generated {n_total_tracks:,} tracks after speed filtering")
-        
-        # === NOW SPLIT TRACKS 60/20/20 ===
-        np.random.seed(42)
-        all_tracks = filtered_df['track_id'].unique()
-        np.random.shuffle(all_tracks)
-        
-        split_train = int(0.60 * len(all_tracks))
-        split_val   = int(0.80 * len(all_tracks))
-        
-        tracks_train = set(all_tracks[:split_train])
-        tracks_val   = set(all_tracks[split_train:split_val])
-        tracks_test  = set(all_tracks[split_val:])
-        
-        print(f"Track split (post-filter): {len(tracks_train):,} train | "
-              f"{len(tracks_val):,} val | {len(tracks_test):,} test "
-              f"(total {n_total_tracks:,} tracks)")
-        
-        # Save splits
-        for split_name, track_set in [("train", tracks_train), 
-                                      ("val", tracks_val), 
-                                      ("test", tracks_test)]:
-            split_df = filtered_df[filtered_df['track_id'].isin(track_set)]
+            
+            if v_id in vessels_train:
+                split_segments["train"].extend(segments)
+            elif v_id in vessels_val:
+                split_segments["val"].extend(segments)
+            else:
+                split_segments["test"].extend(segments)
+
+        # 4. PROCESS AND SAVE EACH SPLIT
+        for split_name, segments in split_segments.items():
+            if not segments:
+                print(f" ! No segments generated for {split_name} split in {src.name}")
+                continue
+            
+            # Combine all tracks for this split
+            split_df = pd.concat(segments, ignore_index=True)
+            
+            # Apply speed filters to this split
+            print(f"--- Processing {split_name} split ---")
+            filtered_split_df = apply_speed_filters(split_df)
+            
+            if filtered_split_df.empty:
+                print(f" ! No tracks remained after filtering for {split_name}")
+                continue
+                
+            # Save to disk
             dst = output_dir / f"{split_name}_{src.name}"
-            split_df.to_csv(dst, index=False)
-            print(f"  Saved {len(track_set):,} {split_name} tracks → {dst}")
-               
-        print(f"{src.name} complete")
+            filtered_split_df.to_csv(dst, index=False)
+            
+            n_tracks = filtered_split_df['track_id'].nunique()
+            print(f" Saved {n_tracks:,} tracks to {dst.name}")
+            
+        print(f"Finished processing {src.name}")

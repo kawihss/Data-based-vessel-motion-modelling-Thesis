@@ -38,7 +38,7 @@ if __name__ == "__main__":
     print("="*70)
     
     # Step 0: Clear all output directories (non-recursive, only contents)
-    print("\n🧹 Clearing output directories...")
+    print("\nClearing output directories...")
     output_base = Path("output")
     for step_dir in output_base.glob("0*"):
         if step_dir.is_dir():

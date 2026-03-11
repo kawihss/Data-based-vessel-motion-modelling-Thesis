@@ -328,24 +328,24 @@ if __name__ == "__main__":
              'output': 'output/01_raw/processed_ais_kiel_20210701.csv',
              'parser': 'kiel'
         },
-        {
-             'name': 'kiel',
-             'file': 'Data/Kiel/ship_emissions_Kiel_AIS_shipdata_20250813.log.txt',
-             'output': 'output/01_raw/processed_ais_kiel_20250813.csv',
-             'parser': 'kiel'
-        },
+        #{
+        #     'name': 'kiel',
+        #     'file': 'Data/Kiel/ship_emissions_Kiel_AIS_shipdata_20250813.log.txt',
+        #     'output': 'output/01_raw/processed_ais_kiel_20250813.csv',
+        #     'parser': 'kiel'
+        #},
         {
              'name': 'bremerhaven',
              'file': 'Data/Bremerhaven/ship_emissions_Bremerhaven_AIS_shipdata_20180404.log.txt',
              'output': 'output/01_raw/processed_ais_bremerhaven_20180404.csv',
              'parser': 'kiel'
         },
-        {
-            'name': 'marinecadastre',
-            'file': 'Data/Mississippi/AIS_2024_01_01.csv',
-            'output': 'output/01_raw/processed_ais_marinecadastre_2024_01.csv',
-            'parser': 'marinecadastre'
-        }
+        #{
+        #    'name': 'marinecadastre',
+        #    'file': 'Data/Mississippi/AIS_2024_01_01.csv',
+        #    'output': 'output/01_raw/processed_ais_marinecadastre_2024_01.csv',
+        #    'parser': 'marinecadastre'
+        #}
     ]
 
     # Create output directory
