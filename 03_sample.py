@@ -63,7 +63,8 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
 
         if spatial_cols:
             method = 'spline' if len(g) >= 4 else 'time'
-            g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(
+            g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(#we might get a warning for sparse marinecadastra
+            #waring when points are coliniear. can be ignored, fallback is time interpolation which will work but be less smooth.
                 method= method, order=3
             )
         if non_spatial_cols:
