@@ -93,7 +93,6 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
 
     # recompute dt on the resampled grid
     out = out.sort_values(['vessel_id', 't_utc'])
-    out['dt'] = out['dt'].fillna(0)
 
     return out
 
