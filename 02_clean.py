@@ -33,6 +33,13 @@ def add_utm_coordinates(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
         df.loc[valid, 'lon'].values,
         df.loc[valid, 'lat'].values
     )
+
+    #Origin subtraction for positional anonymization
+    origin_x = np.nanmedian(x)
+    origin_y = np.nanmedian(y)
+    x, y = x - origin_x, y - origin_y      
+
+
     df['x'] = x
     df['y'] = y
 
