@@ -1,5 +1,4 @@
-Generated using Perplexity with Claude Sonnet 4.6 thinking with access to my Code:
-
+#Not up to date
 
 # AIS Vessel Trajectory Preprocessing Pipeline
 
@@ -9,7 +8,7 @@ vessel motion prediction.
 
 Part of the bachelor's thesis:
 **"Deep Learning-based Motion Models for Multi-Target Tracking of Inland Vessels using AIS Data"**
-— Dustin Klein, RWTH Aachen University, Chair of AI Methodology (Informatik 14) and institute of Automatic Control
+Dustin Klein, RWTH Aachen University, Chair of AI Methodology (Informatik 14) and institute of Automatic Control
 
 ---
 

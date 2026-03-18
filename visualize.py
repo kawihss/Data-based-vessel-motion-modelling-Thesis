@@ -1,4 +1,5 @@
-# AIS Trajectory Visualizer - Generated using perplexity with Claude Sonnes 4.6 Thinking
+# AIS Trajectory Visualizer
+# Not part of the thesis, just a quick tool to visualize the tracks and check data quality.
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -130,20 +131,7 @@ def create_track_summary(df, save_path='output/track_summary.png'):
     print(f"Avg prediction points: {pred_count.mean():.1f}")
     print(f"Tracks with 12 pred points: {(pred_count == 12).sum()}")
     
-    # Histogram
-    fig, ax = plt.subplots(figsize=(10, 6))
-    lengths.hist(bins=30, alpha=0.7, edgecolor='black')
-    ax.axvline(72, color='red', linestyle='--', label='Expected: 72')
-    ax.set_xlabel('Points per track')
-    ax.set_ylabel('Number of tracks')
-    ax.set_title('Distribution of Track Lengths')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    print(f"Summary plot saved: {save_path}")
-    plt.show()
+  
 
 
 if __name__ == "__main__":
