@@ -1,8 +1,7 @@
 #00_full_preprocessing_pipeline.py
 #!/usr/bin/env python3
 """
-AIS Processing Pipeline — Complete Run
-Executes steps 01→05 in sequence, clearing output/ first for a clean run.
+Executes preprocessing steps 01 to 05 in sequence, clearing output/ directory first for a clean run.
 Expects raw AIS data in Data/[Kiel|Bremerhaven|Mississippi]/
 """
 
@@ -10,7 +9,7 @@ import sys
 import subprocess
 from pathlib import Path
 
-# Pipeline steps (script name → input → output)
+# Pipeline steps (script name, input, output)
 STEPS = [
     ("01_extract.py", "Data/", "output/01_raw/"),
     ("02_clean.py", "output/01_raw/", "output/02_cleaned/"),
@@ -20,16 +19,15 @@ STEPS = [
 ]
 
 def run_script(script_name: str):
-    """Run a single pipeline script."""
     try:
         print(f"\n{'='*70}")
         print(f"Running {script_name}")
         print(f"{'='*70}")
         result = subprocess.run([sys.executable, script_name], 
                               check=True, capture_output=False, text=True)
-        print(f"✓ {script_name} completed successfully")
+        print(f"{script_name} completed successfully")
     except subprocess.CalledProcessError as e:
-        print(f"✗ {script_name} failed with exit code {e.returncode}")
+        print(f"{script_name} failed with exit code {e.returncode}")
         print(f"Error output: {e.stderr}")
         sys.exit(1)
 
@@ -40,10 +38,10 @@ if __name__ == "__main__":
     # Step 0: Clear all output directories (non-recursive, only contents)
     print("\nClearing output directories...")
     output_base = Path("output")
-    for step_dir in output_base.glob("0*"):
+    for step_dir in output_base.glob("0*"):  #regex for directories starting with 0 (01_raw, 02_cleaned, etc.)
         if step_dir.is_dir():
             for file in step_dir.glob("*"):
-                file.unlink()
+                file.unlink() # delete file
             print(f"   Cleared {step_dir.name}")
     
     # Step 1-5: Run pipeline

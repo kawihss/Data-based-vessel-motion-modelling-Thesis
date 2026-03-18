@@ -7,7 +7,6 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
-#from pyproj import Transformer
 
 
 def parse_coordinate(coord_str):
@@ -32,7 +31,7 @@ def parse_angle(angle_str):
         return np.nan
 
     value = float(angle_str)
-    if value == 511.0:
+    if value == 511.0: # known AIS sentinel for "not available" heading
         return np.nan
 
     return value
@@ -53,16 +52,16 @@ def parse_timestamp(ts_str):
         return pd.to_datetime(ts_str, format='%y%m%d %H%M%S')
     except:
         return pd.NaT
+    df['t_utc'] = pd.to_datetime(df['t_utc'], errors='coerce')
 
 
-def load_ais_data(filepath, dataset_name, verbose=True):
+def load_ais_data(filepath, dataset_name):
     """
-    Load Kiel/Bremerhaven AIS data (semicolon format) into pandas DataFrame
+    Load Kiel/Bremerhaven AIS data into pandas DataFrame
 
     Args:
         filepath: Path to AIS log file
         dataset_name: Name identifier for the dataset (e.g., 'kiel', 'bremerhaven')
-        verbose: Print progress and statistics
 
     Returns:
         DataFrame with parsed AIS position reports in standard format
@@ -72,27 +71,25 @@ def load_ais_data(filepath, dataset_name, verbose=True):
     errors = {'parse_errors': 0, 'invalid_mmsi': 0, 'short_lines': 0}
     line_count = 0
 
-    if verbose:
-        print(f"\n{'='*60}")
-        print(f"Loading {dataset_name.upper()} dataset")
-        print(f"{'='*60}")
-        print(f"File: {filepath}")
-        print(f"Started at: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"\n{'='*60}")
+    print(f"Loading {dataset_name.upper()} dataset")
+    print(f"{'='*60}")
+    print(f"File: {filepath}")
 
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            for line_count, line in enumerate(f, 1):
+            for line_count, line in enumerate(f, 1):#  f is an iterable file object
 
                 # Progress update every 50k lines
-                if verbose and line_count % 50000 == 0:
+                if line_count % 50000 == 0:
                     print(f"  Processed {line_count:,} lines | "
                           f"Extracted {len(position_records):,} reports | "
                           f"Errors: {sum(errors.values())}")
 
-                fields = line.strip().split(';')
+                fields = line.strip().split(';') # semicolon delimited for Kiel/Bremerhaven datasets
 
 
-                # Extract AIS message type from last field e.g. "serial#1(A)[18]"
+                # Extract AIS message type from last field
                 last_field = fields[-1].strip()
                 msg_type_match = last_field.split('[')[-1].rstrip(']')
 
@@ -157,13 +154,12 @@ def load_ais_data(filepath, dataset_name, verbose=True):
         print(f"ERROR reading file: {e}")
         return None
 
-    if verbose:
-        print(f"\nParsing complete!")
-        print(f"  Total lines read: {line_count:,}")
-        print(f"  Position reports: {len(position_records):,}")
-        print(f"  Parse errors: {errors['parse_errors']}")
-        print(f"  Invalid MMSI: {errors['invalid_mmsi']}")
-        print(f"  Short lines: {errors['short_lines']}")
+    print(f"\nParsing complete!")
+    print(f"  Total lines read: {line_count:,}")
+    print(f"  Position reports: {len(position_records):,}")
+    print(f"  Parse errors: {errors['parse_errors']}")
+    print(f"  Invalid MMSI: {errors['invalid_mmsi']}")
+    print(f"  Short lines: {errors['short_lines']}")
 
     # Create DataFrame
     df = pd.DataFrame(position_records)
@@ -175,54 +171,49 @@ def load_ais_data(filepath, dataset_name, verbose=True):
     # Remove records with invalid timestamps or coordinates
     initial_len = len(df)
     df = df.dropna(subset=['t_utc', 'lat', 'lon'])
-    if verbose and len(df) < initial_len:
+    if len(df) < initial_len:
         print(f"  Removed {initial_len - len(df)} records with invalid data")
 
     
-    # Convert categorical columns
+    # Convert categorical columns #todo required?
     df['dataset'] = df['dataset'].astype('category')
     df['nav_status'] = df['nav_status'].astype('category')
 
     # Sort by vessel_id and timestamp
     df = df.sort_values(['vessel_id', 't_utc']).reset_index(drop=True)
 
-    if verbose:
-        print(f"\nDataset summary:")
-        print(f"  Unique vessels: {df['vessel_id'].nunique()}")
-        print(f"  Time range: {df['t_utc'].min()} to {df['t_utc'].max()}")
-        print(f"  Duration: {df['t_utc'].max() - df['t_utc'].min()}")
-        print(f"  Geographic bounds:")
-        print(f"    Lat: {df['lat'].min():.4f}°N to {df['lat'].max():.4f}°N")
-        print(f"    Lon: {df['lon'].min():.4f}°E to {df['lon'].max():.4f}°E")
+    print(f"\nDataset summary:")
+    print(f"  Unique vessels: {df['vessel_id'].nunique()}")
+    print(f"  Time range: {df['t_utc'].min()} to {df['t_utc'].max()}")
+    print(f"  Duration: {df['t_utc'].max() - df['t_utc'].min()}")
+    print(f"  Geographic bounds:")
+    print(f"    Lat: {df['lat'].min():.4f}°N to {df['lat'].max():.4f}°N")
+    print(f"    Lon: {df['lon'].min():.4f}°E to {df['lon'].max():.4f}°E")
 
     return df
 
 
-def load_marinecadastre_ais(filepath, dataset_name, verbose=True):
+def load_marinecadastre_ais(filepath, dataset_name):
     """
     Load Marine Cadastre AIS CSV data into pandas DataFrame
 
     Args:
         filepath: Path to Marine Cadastre CSV file
         dataset_name: Name identifier (e.g., 'san_francisco', 'new_york')
-        verbose: Print progress and statistics
 
     Returns:
         DataFrame with parsed AIS data in standard format
     """
 
-    if verbose:
-        print(f"\n{'='*60}")
-        print(f"Loading {dataset_name.upper()} dataset (Marine Cadastre)")
-        print(f"{'='*60}")
-        print(f"File: {filepath}")
-        print(f"Started at: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"\n{'='*60}")
+    print(f"Loading {dataset_name.upper()} dataset (Marine Cadastre)")
+    print(f"{'='*60}")
+    print(f"File: {filepath}")
 
     try:
         df = pd.read_csv(filepath)
 
-        if verbose:
-            print(f"  Loaded {len(df):,} records")
+        print(f"  Loaded {len(df):,} records")
 
     except FileNotFoundError:
         print(f"ERROR: File not found: {filepath}")
@@ -262,7 +253,7 @@ def load_marinecadastre_ais(filepath, dataset_name, verbose=True):
     df['dataset'] = dataset_name
 
     # Parse timestamp
-    df['t_utc'] = pd.to_datetime(df['t_utc'], errors='coerce')
+    df['t_utc'] = pd.to_datetime(df['t_utc'], errors='coerce') # unified parser would have unneccesary overhead
 
     # Add ROT column (not in Marine Cadastre)
     df['rot'] = np.nan
@@ -275,21 +266,18 @@ def load_marinecadastre_ais(filepath, dataset_name, verbose=True):
     df.loc[df['sog'] < 0, 'sog'] += 102.4
     df.loc[df['cog'] < 0, 'cog'] += 409.6
 
-    # Sentinel values → NaN (not available)
+    # Sentinel values NaN (not available)
     #df.loc[df['sog'] >= 102.3, 'sog'] = np.nan specs were unclear " Sentinel values such as 102.3 may indicate that no SOG value was
     #transmitted, and can be translated as “not available."
     df.loc[df['cog'] == 360.0, 'cog'] = np.nan
     df.loc[df['heading'] == 511, 'heading'] = np.nan  # standard AIS sentinel
 
-    if verbose:
-        print(f"  SOG/COG sentinels cleaned")
+    print(f"  SOG/COG sentinels cleaned")
 
-    if verbose and len(df) < initial_len:
+    if len(df) < initial_len:
         print(f"  Removed {initial_len - len(df)} records with invalid data")
 
-    
-
-    # Convert categorical columns
+        # Convert categorical columns, again  TODO
     df['dataset'] = df['dataset'].astype('category')
     if 'nav_status' in df.columns:
         df['nav_status'] = df['nav_status'].astype('category')
@@ -299,20 +287,19 @@ def load_marinecadastre_ais(filepath, dataset_name, verbose=True):
     # Sort
     df = df.sort_values(['vessel_id', 't_utc']).reset_index(drop=True)
 
-    if verbose:
-        print(f"\nDataset summary:")
-        print(f"  Unique vessels: {df['vessel_id'].nunique()}")
-        print(f"  Time range: {df['t_utc'].min()} to {df['t_utc'].max()}")
-        print(f"  Duration: {df['t_utc'].max() - df['t_utc'].min()}")
-        print(f"  Geographic bounds:")
-        print(f"    Lat: {df['lat'].min():.4f}° to {df['lat'].max():.4f}°")
-        print(f"    Lon: {df['lon'].min():.4f}° to {df['lon'].max():.4f}°")
+    print(f"\nDataset summary:")
+    print(f"  Unique vessels: {df['vessel_id'].nunique()}")
+    print(f"  Time range: {df['t_utc'].min()} to {df['t_utc'].max()}")
+    print(f"  Duration: {df['t_utc'].max() - df['t_utc'].min()}")
+    print(f"  Geographic bounds:")
+    print(f"    Lat: {df['lat'].min():.4f}° to {df['lat'].max():.4f}°")
+    print(f"    Lon: {df['lon'].min():.4f}° to {df['lon'].max():.4f}°")
 
-        if 'vessel_type' in df.columns:
-            print(f"\n  Vessel types (top 5):")
-            type_counts = df['vessel_type'].value_counts().head(5)
-            for vtype, count in type_counts.items():
-                print(f"    Type {vtype}: {count:,} records")
+    if 'vessel_type' in df.columns:
+        print(f"\n  Vessel types (top 5):")
+        type_counts = df['vessel_type'].value_counts().head(5)
+        for vtype, count in type_counts.items():
+            print(f"    Type {vtype}: {count:,} records")
 
     return df
 
@@ -360,14 +347,12 @@ if __name__ == "__main__":
             df = load_marinecadastre_ais(
                 filepath=dataset_config['file'],
                 dataset_name=dataset_config['name'],
-                verbose=True
             )
         else:
             # Default: Kiel/Bremerhaven format
             df = load_ais_data(
                 filepath=dataset_config['file'],
                 dataset_name=dataset_config['name'],
-                verbose=True
             )
 
         if df is not None and not df.empty:
@@ -385,45 +370,41 @@ if __name__ == "__main__":
 
             # Save individual dataset
             df.to_csv(dataset_config['output'], index=False)
-            print(f"✓ Saved to: {dataset_config['output']}")
-            print(f"  Records: {len(df):,} from {df['vessel_id'].nunique()} vessels")
+            print(f"Saved to: {dataset_config['output']}")
+            print(f"Records: {len(df):,} from {df['vessel_id'].nunique()} vessels")
 
-            # Collect for combined dataset
-            #all_data.append(df) # doesnt make sense to combine the datasets at this stage 
-            # since we will be resampling them separately in the next step, and they may have different frequencies and time ranges. 
-            # We can combine them after resampling in the next step. Keeping functions for now in case we want to combine them at this stage later on.
+
         else:
             print(f"✗ Failed to process {dataset_config['name']}")
 
+    """
     # Combine all datasets
-    if all_data:
-        print(f"\n{'='*60}")
-        print("COMBINING ALL DATASETS")
-        print(f"{'='*60}")
+    print(f"\n{'='*60}")
+    print("COMBINING ALL DATASETS")
+    print(f"{'='*60}")
 
-        # Concatenate (pandas handles missing optional columns with NaN)
-        combined_df = pd.concat(all_data, ignore_index=True)
-        combined_df = combined_df.sort_values(['dataset', 'vessel_id', 't_utc']).reset_index(drop=True)
+    # Concatenate (pandas handles missing optional columns with NaN)
+    combined_df = pd.concat(all_data, ignore_index=True)
+    combined_df = combined_df.sort_values(['dataset', 'vessel_id', 't_utc']).reset_index(drop=True)
 
-        combined_output = 'output/01_raw/processed_ais_combined.csv'
-        combined_df.to_csv(combined_output, index=False)
+    combined_output = 'output/01_raw/processed_ais_combined.csv'
+    combined_df.to_csv(combined_output, index=False)
 
-        print(f"\nCombined dataset statistics:")
-        print(f"  Total records: {len(combined_df):,}")
-        print(f"  Total unique vessels: {combined_df['vessel_id'].nunique()}")
-        print(f"  Datasets: {combined_df['dataset'].unique().tolist()}")
-        print(f"\nRecords per dataset:")
-        print(combined_df.groupby('dataset', observed=True).size())
-        print(f"\n✓ Saved combined data to: {combined_output}")
+    print(f"\nCombined dataset statistics:")
+    print(f"  Total records: {len(combined_df):,}")
+    print(f"  Total unique vessels: {combined_df['vessel_id'].nunique()}")
+    print(f"  Datasets: {combined_df['dataset'].unique().tolist()}")
+    print(f"\nRecords per dataset:")
+    print(combined_df.groupby('dataset', observed=True).size())
+    print(f"\n Saved combined data to: {combined_output}")
 
-        print(f"\n{'='*60}")
-        print(f"OUTPUT FORMAT:")
-        print(f"{'='*60}")
-        print(f"Core columns: dataset, t_utc, vessel_id, lat, lon, sog, cog, heading, rot")
-        print(f"Optional columns: {[col for col in combined_df.columns if col not in ['dataset', 't_utc', 'vessel_id', 'lat', 'lon', 'sog', 'cog', 'heading', 'rot']]}")
+    print(f"\n{'='*60}")
+    print(f"OUTPUT FORMAT:")
+    print(f"{'='*60}")
+    print(f"Core columns: dataset, t_utc, vessel_id, lat, lon, sog, cog, heading, rot")
+    print(f"Optional columns: {[col for col in combined_df.columns if col not in ['dataset', 't_utc', 'vessel_id', 'lat', 'lon', 'sog', 'cog', 'heading', 'rot']]}")
 
-        print(f"\n{'='*60}")
-        print("PROCESSING COMPLETE!")
-        print(f"{'='*60}")
-    else:
-        print("\nNo data to combine!")
+    print(f"\n{'='*60}")
+    print("PROCESSING COMPLETE!")
+    print(f"{'='*60}")
+    """

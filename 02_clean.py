@@ -1,6 +1,6 @@
-# 02_clean.py — AIS Cleaning: coordinate conversion, deduplication, MMSI hashing
+# 02_clean.py: AIS Cleaning: coordinate conversion, deduplication, MMSI hashing
 # Input:  output/01_raw/*.csv
-# Output: output/02_cleaned/*.csv this is what we can publish, features output later
+# Output: output/02_cleaned/*.csv this is what we can publish, 01_raw is not anonymized yet, features are output later
 
 import pandas as pd
 import numpy as np
@@ -10,21 +10,21 @@ from datetime import datetime
 from pyproj import Transformer
 
 
-# ── Hashing ──────────────────────────────────────────────────────────────────
+# Hashing
 def hash_mmsi(mmsi) -> str:
     """One-way SHA-256 hash of MMSI → 12-char anonymous vessel ID."""
     return hashlib.sha256(str(int(mmsi)).encode()).hexdigest()[:12]
 
 
-# ── UTM conversion ───────────────────────────────────────────────────────────
-def add_utm_coordinates(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
+# UTM conversion and anonymization
+def add_utm_coordinates(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     median_lon = df['lon'].median()
     median_lat = df['lat'].median()
     zone = int((median_lon + 180) / 6) + 1
-    epsg = f"326{zone:02d}" if median_lat >= 0 else f"327{zone:02d}"
+    epsg = f"326{zone:02d}" if median_lat >= 0 else f"327{zone:02d}"#epsg code for UTM zone, 326 for northern hemisphere, 327 for southern hemisphere
 
-    transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True)
+    transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True) # WGS84 lat/lon to UTM, always_xy ensures input is (lon, lat) order
 
     valid = df['lat'].notna() & df['lon'].notna()
     x = np.full(len(df), np.nan)
@@ -44,10 +44,9 @@ def add_utm_coordinates(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
     df['y'] = y
 
     hemi = 'N' if median_lat >= 0 else 'S'
-    if verbose:
-        print(f"  UTM Zone {zone}{hemi} (EPSG:{epsg})")
-        print(f"  x: {df['x'].min():.0f} – {df['x'].max():.0f} m")
-        print(f"  y: {df['y'].min():.0f} – {df['y'].max():.0f} m")
+    print(f"  UTM Zone {zone}{hemi} (EPSG:{epsg})")
+    print(f"  x: {df['x'].min():.0f} – {df['x'].max():.0f} m")
+    print(f"  y: {df['y'].min():.0f} – {df['y'].max():.0f} m")
     return df
 
 
@@ -55,35 +54,34 @@ def remove_position_jumps(df: pd.DataFrame, threshold=2.0) -> pd.DataFrame:
     """Delete rows where displacement exceeds threshold × speed-implied distance."""
     df = df.copy().sort_values('t_utc').reset_index(drop=True)
 
-    t = df['t_utc'].astype(np.int64) / 1e9          # → seconds
+    t = df['t_utc'].astype(np.int64) / 1e9          # in seconds
     dt = np.diff(t, prepend=np.nan)
     dx = np.diff(df['x'].values, prepend=np.nan)
     dy = np.diff(df['y'].values, prepend=np.nan)
     actual_dist = np.sqrt(dx**2 + dy**2)             # metres
 
-    speed_ms = df['sog'].values * 1852 / 3600        # knots → m/s
+    speed_ms = df['sog'].values * 1852 / 3600        #  knot to m/s
     speed_avg = (speed_ms + np.roll(speed_ms, 1)) / 2
     speed_avg[0] = speed_ms[0]
     expected_dist = speed_avg * np.abs(dt)
 
-    is_jump = actual_dist > threshold * np.maximum(expected_dist, 10)
+    is_jump = actual_dist > threshold * np.maximum(expected_dist, 10) # also set a minimum expected distance to avoid flagging small time gaps at low speeds
     is_jump[0] = False
 
     return df[~is_jump].reset_index(drop=True)
 
 
-def remove_fast_vessels(df: pd.DataFrame, max_sog=30, verbose=True) -> pd.DataFrame:
+def remove_fast_vessels(df: pd.DataFrame, max_sog=30) -> pd.DataFrame:
     """Remove all rows belonging to vessels that ever exceed max_sog knots."""
     fast_ids = df.groupby('vessel_id')['sog'].max()
     fast_ids = fast_ids[fast_ids > max_sog].index
     mask = df['vessel_id'].isin(fast_ids)
-    if verbose:
-        print(f"  Fast vessel filter: removed {mask.sum():,} rows "
-              f"({fast_ids.nunique()} vessels exceeding {max_sog} kn)")
+    print(f"  Fast vessel filter: removed {mask.sum():,} rows "
+            f"({fast_ids.nunique()} vessels exceeding {max_sog} kn)")
     return df[~mask].reset_index(drop=True)
 
 # ── Main clean function ───────────────────────────────────────────────────────
-def clean(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
+def clean(df: pd.DataFrame) -> pd.DataFrame:
     n0 = len(df)
 
     # 1. Geographic bounds filter (dataset-specific). very vague for now, just to catch obvious outliers and coordinate errors. to be reifined later for missisipi dataset.
@@ -94,22 +92,20 @@ def clean(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
     elif 'kiel' in df['dataset'].iloc[0].lower():
         mask = df['lat'].between(50, 62) & df['lon'].between(8, 12)
     elif 'marinecadastre' in df['dataset'].iloc[0].lower():
-        mask = df['lat'].between(28.8, 35.2) & df['lon'].between(-91.0, -88.8) # polygon later
+        mask = df['lat'].between(28.8, 35.2) & df['lon'].between(-91.0, -88.8) # TODO polygon later
     else:
         mask = pd.Series(True, index=df.index)
 
     df = df[mask].copy()
-    if verbose:
-        print(f"  Geographic filter kept {len(df):,} / {n_pre_geo:,} rows")
+    print(f"  Geographic filter kept {len(df):,} / {n_pre_geo:,} rows")
 
 
-    # 2. Anonymize MMSI → hashed vessel_id
+    # 2. Anonymize MMSI hashed vessel_id
     df['vessel_id'] = df['vessel_id'].apply(hash_mmsi)
-    if verbose:
-        print(f"  Hashed {df['vessel_id'].nunique()} unique vessel IDs")
+    print(f"  Hashed {df['vessel_id'].nunique()} unique vessel IDs")
 
     
-    # 3. Remove duplicates — keep row with most non-null values
+    # 3. Remove duplicates: keep row with most non-null values
     n_before_dedup = len(df)
 
     df['_non_null'] = df.notna().sum(axis=1)
@@ -117,11 +113,10 @@ def clean(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
     df = df.drop_duplicates(subset=['vessel_id', 't_utc'], keep='first')
     df = df.drop(columns='_non_null')
 
-    if verbose:
-        print(f"  Duplicates removed: {n_before_dedup - len(df):,}")
+    print(f"  Duplicates removed: {n_before_dedup - len(df):,}")
 
     # 4. UTM coordinate conversion
-    df = add_utm_coordinates(df, verbose=verbose)
+    df = add_utm_coordinates(df)
 
     # Reorder columns: insert x, y after lon
     cols = list(df.columns)
@@ -131,16 +126,14 @@ def clean(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
         cols = cols[:lon_idx+1] + ['x', 'y'] + cols[lon_idx+1:]
         df = df[cols]
 
-    #Remove position jumps per vessel ──────────────────────────────
+    #Remove position jumps per vessel and filter out vessels that exceed speed threshold 
     n_before_jumps = len(df)
     df = df.groupby('vessel_id', group_keys=False).apply(remove_position_jumps)
-    if verbose:
-        print(f"  Jump filter removed: {n_before_jumps - len(df):,}")
+    print(f"  Jump filter removed: {n_before_jumps - len(df):,}")
 
-    df = remove_fast_vessels(df, max_sog=30, verbose=verbose)
+    df = remove_fast_vessels(df, max_sog=30)
 
-    if verbose:
-        print(f"  Rows: {n0:,} → {len(df):,} (removed {n0 - len(df):,})")
+    print(f"  Rows: {n0:,} → {len(df):,} (removed {n0 - len(df):,})")
 
 
 
@@ -149,7 +142,7 @@ def clean(df: pd.DataFrame, verbose=True) -> pd.DataFrame:
 
     return df.sort_values(['vessel_id', 't_utc']).reset_index(drop=True)
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     input_dir  = Path("output/01_raw")
     output_dir = Path("output/02_cleaned")
@@ -170,7 +163,7 @@ if __name__ == "__main__":
         df = pd.read_csv(src, parse_dates=['t_utc']).copy()
         n_in = len(df)
 
-        df = clean(df, verbose=True)
+        df = clean(df)
         n_out = len(df)
 
         dst = output_dir / src.name

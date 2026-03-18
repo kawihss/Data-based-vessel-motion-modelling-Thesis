@@ -1,4 +1,6 @@
 # 05_normalize.py — Normalization: displacements, sin/cos COG, z-score
+# split is done before normalization and normalization is applied per split, 
+# scaler is fitted on train only and applied to all splits to avoid data leakage
 # Input:  output/04_trajectories/*.csv 
 # Output: output/05_normalized/*.csv + scalers.pkl
 
@@ -15,7 +17,6 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
     """Compute dx/dy displacements and sin/cos COG encoding across all tracks."""
     df = df.copy().sort_values(['track_id', 't_utc'])
 
-    # diff() per track — no apply() needed, track_id stays in df
     df['dx'] = df.groupby('track_id')['x'].diff().fillna(0)
     df['dy'] = df.groupby('track_id')['y'].diff().fillna(0)
 
@@ -34,25 +35,21 @@ def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False, verbose=True):
     if fit:
         scaler = StandardScaler()
         scaler.fit(df[NUMERIC_FEATURES])
-        if verbose:
-            print(" Scaler fitted:")
-            for feat, mu, sigma in zip(NUMERIC_FEATURES, scaler.mean_, scaler.scale_):
-                print(f"    {feat}: μ={mu:.4f}, σ={sigma:.4f}")
+        print(" Scaler fitted:")
+        for feature, mu, sigma in zip(NUMERIC_FEATURES, scaler.mean_, scaler.scale_):
+            print(f"    {feature}: μ={mu:.4f}, σ={sigma:.4f}")
 
     df_numeric = pd.DataFrame(
         scaler.transform(df[NUMERIC_FEATURES]),
-        columns=[f'{feat}_norm' for feat in NUMERIC_FEATURES],
+        columns=[f'{feature}_norm' for feature in NUMERIC_FEATURES],
         index=df.index
     )
 
     keep_cols = ['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog']
-    if 'window_end_t_utc' in df.columns:
-        keep_cols.append('window_end_t_utc')
-
+   
     df_out = pd.concat([df[keep_cols], df_numeric], axis=1)
 
-    if verbose:
-        print(f" Normalized {len(df):,} rows ({df['track_id'].nunique():,} tracks)")
+    print(f" Normalized {len(df):,} rows ({df['track_id'].nunique():,} tracks)")
     return df_out, scaler
 
 
@@ -61,7 +58,7 @@ if __name__ == "__main__":
     output_dir = Path("output/05_normalized")
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Group files by dataset (train/val/test variants)
+    # Group files by dataset (train/val/test)
     train_files = sorted(input_dir.glob("train_*.csv"))
     val_files   = sorted(input_dir.glob("val_*.csv"))
     test_files  = sorted(input_dir.glob("test_*.csv"))
@@ -115,7 +112,7 @@ if __name__ == "__main__":
         
         print(f"{split_name} complete")
     
-    # Save scaler
+    # Save scaler for evaluation and reproducibility
     joblib.dump(scalers, output_dir / "scalers.pkl")
     print(f"\n{'='*60}")
     print(f"NORMALIZED {total_rows:,} rows ({total_tracks:,} tracks)")

@@ -1,4 +1,4 @@
-# 03_sample.py — time resampling (10s German, 60s NOAA)
+# 03_sample.py: time resampling (10s German, 60s NOAA)
 # Input:  output/02_cleaned/*.csv (with x,y but without lat,lon)
 # Output: output/03_sampled/*.csv (resampled trajectories)
 
@@ -19,18 +19,18 @@ def infer_freq_from_name(name: str) -> int:
         return GERMAN_FREQ_S
     if 'marinecadastre' in lower or 'mississippi' in lower:
         return NOAA_FREQ_S
-    # default: be conservative
+
     return GERMAN_FREQ_S
 
 def split_long_gaps(df: pd.DataFrame, max_gap_s: int) -> pd.DataFrame:
     """Split vessel trajectories into segments at large time gaps."""
     df = df.sort_values(['vessel_id', 't_utc']).copy()
-    df['dt'] = df.groupby('vessel_id')['t_utc'].diff().dt.total_seconds()
+    df['dt'] = df.groupby('vessel_id')['t_utc'].diff().dt.total_seconds() # per vessel time difference in seconds
     
     # mark segment breaks
     df['gap_break'] = (df['dt'] > max_gap_s) | df['dt'].isna()
     df['segment_id'] = df.groupby('vessel_id')['gap_break'].cumsum()
-    df['vessel_id'] = (df['vessel_id'].astype(str) + '_' + 
+    df['vessel_id'] = (df['vessel_id'].astype(str) + '_' + #break vessel_id into segments by appending segment_id, ensures unique vessel_id for each continuous segment
                        df['segment_id'].astype(str))
     
     return df.drop(columns=['dt', 'gap_break', 'segment_id'])
@@ -44,7 +44,7 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
 
     for vid, g in df.groupby('vessel_id'):
         g = g.sort_values('t_utc')
-        real_times = g['t_utc'].values  # ++ save original timestamps
+        real_times = g['t_utc'].values  # save original timestamps for dt calculation later
 
         g = g.set_index('t_utc')
 
@@ -52,35 +52,35 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
         t_end   = g.index[-1].floor(f'{freq_s}s')
         if t_end <= t_start:
             continue
-        new_idx = pd.date_range(t_start, t_end, freq=f'{freq_s}s')
+        new_idx = pd.date_range(t_start, t_end, freq=f'{freq_s}s') #new time grid for resampling
 
-        g_resampled = g.reindex(g.index.union(new_idx))
-        num_cols = g.select_dtypes(include=[np.number]).columns.tolist()
+        g_resampled = g.reindex(g.index.union(new_idx)) # add new timestamps with NaN values, will be filled by interpolation
+        num_cols = g.select_dtypes(include=[np.number]).columns.tolist() # only interpolate numeric columns, dt separat 
         if 'dt' in num_cols:
-            num_cols.remove('dt')
+            num_cols.remove('dt') # dt is computed later based on real timestamps
         spatial_cols     = [c for c in ['x', 'y'] if c in num_cols]
         non_spatial_cols = [c for c in num_cols if c not in spatial_cols]
 
         if spatial_cols:
             method = 'spline' if len(g) >= 4 else 'time'
             g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(#we might get a warning for sparse marinecadastra
-            #waring when points are coliniear. can be ignored, fallback is time interpolation which will work but be less smooth.
+            # when points are coliniear. can be ignored, fallback is time interpolation which will work but be less smooth.
                 method= method, order=3
             )
         if non_spatial_cols:
             g_resampled[non_spatial_cols] = g_resampled[non_spatial_cols].interpolate(
                 method='time'
             )        
-        g_resampled = g_resampled.loc[new_idx]
+        g_resampled = g_resampled.loc[new_idx] 
 
-        # ++ compute dt_quality: seconds to nearest real AIS point
+        # ++ compute dt: seconds to nearest real AIS point
         new_times_s   = new_idx.astype(np.int64) / 1e9
         real_times_s  = pd.DatetimeIndex(real_times).astype(np.int64) / 1e9
         idx           = np.searchsorted(real_times_s, new_times_s).clip(0, len(real_times_s) - 1)
         idx_prev      = (idx - 1).clip(0, len(real_times_s) - 1)
         dist_next     = np.abs(new_times_s - real_times_s[idx])
         dist_prev     = np.abs(new_times_s - real_times_s[idx_prev])
-        g_resampled['dt'] = np.minimum(dist_next, dist_prev)  #
+        g_resampled['dt'] = np.minimum(dist_next, dist_prev)  #dt
 
         g_resampled['vessel_id'] = vid
         g_resampled['dataset']   = g['dataset'].iloc[0]
@@ -90,8 +90,6 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
         return pd.DataFrame(columns=df.columns)
 
     out = pd.concat(resampled_parts, ignore_index=True)
-
-    # recompute dt on the resampled grid
     out = out.sort_values(['vessel_id', 't_utc'])
 
     return out

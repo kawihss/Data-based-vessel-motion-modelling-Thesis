@@ -3,10 +3,7 @@ import numpy as np
 from pathlib import Path
 from datetime import timedelta
 
-# --- TRAIN/TEST SPLIT STRATEGY ---
-# Note: To avoid data leakage, you should split 'input_files' or unique 'vessel_ids'
-# into two lists (train_list, test_list) before processing. 
-# Never split the resulting 'track_id's randomly!
+# To avoid data leakage, we split unique 'vessel_ids'. See thesis text
 
 # --- CONFIGURATION ---
 WINDOW_DUR = timedelta(minutes=10)
@@ -25,7 +22,7 @@ def infer_freq_from_name(name: str) -> int:
         return 60
     return 10
 
-def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: int):
+def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: int):# efficient means with overlap
     """
     Slices the vessel trajectory into context/prediction pairs using a stride.
     """
@@ -41,18 +38,16 @@ def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: i
     
     # Slide the window using the stride
     for i in range(n_ctx, len(group) - n_pred, n_stride):
-        # Time Gap Guard: Ensure the window doesn't span a data blackout
-        # The total window (12m) should not realistically take more than, say, 15m of wall time.
+        # Time Gap Guard: Ensure the window doesn't span a data blackout, see thesis text
         start_t = group.iloc[i - n_ctx]['t_utc']
         end_t = group.iloc[i + n_pred - 1]['t_utc']
         if (end_t - start_t) > (WINDOW_DUR + PRED_HORIZON) * 1.5:
             continue
 
-        # Extract slices
+        # context prediction split
         ctx = group.iloc[i - n_ctx : i].copy()
         pred = group.iloc[i : i + n_pred].copy()
         
-        # Label roles
         ctx['role'] = 'context'
         pred['role'] = 'prediction'
         
@@ -81,7 +76,7 @@ def apply_speed_filters(df: pd.DataFrame) -> pd.DataFrame:
     
     # Filter IDs based on criteria:
     # 1. Max SOG must be >= 1.0 (removes anchored ships)
-    # 2. Less than 30% of points can be < 2.0 knots
+    # 2. Less than LOW_SPEED_FRAC_MAX of points can be < 2.0 knots
     valid_mask = (stats['max_sog'] >= MIN_SOG) & (stats['low_speed_frac'] <= LOW_SPEED_FRAC_MAX)
     valid_ids = stats.index[valid_mask]
 
@@ -106,12 +101,12 @@ if __name__ == '__main__':
         df = pd.read_csv(src, parse_dates=['t_utc'])
         freq_s = infer_freq_from_name(src.name)
         
-        # 1. IDENTIFY UNIQUE VESSELS AND SHUFFLE
+        # 1. Split vessels into train/val/test based on unique vessel_ids to avoid data leakage, see thesis text
         np.random.seed(42)
         all_vessels = df['vessel_id'].unique()
         np.random.shuffle(all_vessels)
         
-        # 2. DEFINE SPLIT BOUNDARIES FOR VESSELS
+        # 2. Define splits (60% train, 20% val, 20% test)
         n_vessels = len(all_vessels)
         split_train = int(0.60 * n_vessels)
         split_val   = int(0.80 * n_vessels)
@@ -127,7 +122,7 @@ if __name__ == '__main__':
             "test": []
         }
         
-        # 3. GENERATE SEGMENTS AND ASSIGN BY VESSEL ID
+        # 3. Generate Segments for each vessel and assign to splits
         vessel_groups = df.groupby('vessel_id')
         for v_id, v_data in vessel_groups:
             segments, global_track_counter = create_samples_efficient(
@@ -141,7 +136,7 @@ if __name__ == '__main__':
             else:
                 split_segments["test"].extend(segments)
 
-        # 4. PROCESS AND SAVE EACH SPLIT
+        # 4. Process each split: apply speed filters and save
         for split_name, segments in split_segments.items():
             if not segments:
                 print(f" ! No segments generated for {split_name} split in {src.name}")
@@ -151,7 +146,7 @@ if __name__ == '__main__':
             split_df = pd.concat(segments, ignore_index=True)
             
             # Apply speed filters to this split
-            print(f"--- Processing {split_name} split ---")
+            print(f"Processing {split_name} split")
             filtered_split_df = apply_speed_filters(split_df)
             
             if filtered_split_df.empty:
