@@ -1,4 +1,4 @@
-# 02_clean.py: AIS Cleaning: coordinate conversion, deduplication, MMSI hashing
+# 02_clean.py: AIS Cleaning: coordinate conversion, deduplication, MMSI hashing, context labeling
 # Input:  output/01_raw/*.csv
 # Output: output/02_cleaned/*.csv this is what we can publish, 01_raw is not anonymized yet, features are output later
 
@@ -8,6 +8,15 @@ import hashlib
 from pathlib import Path
 from datetime import datetime
 from pyproj import Transformer
+import geopandas as gpd
+import osmnx as ox
+from shapely.geometry import box
+
+# --- OSMnx API Settings ---
+ox.settings.overpass_endpoint = "https://overpass.kumi.systems/api/interpreter" # mirror that is more reliable for large queries
+ox.settings.max_query_area_size = 5 * 1e9  # 5000 km² 
+ox.settings.timeout = 600                  # 10 minutes timeout for large queries
+# --------------------------
 
 
 # Hashing
@@ -17,7 +26,7 @@ def hash_mmsi(mmsi) -> str:
 
 
 # UTM conversion and anonymization
-def add_utm_coordinates(df: pd.DataFrame) -> pd.DataFrame:
+def add_utm_coordinates(df: pd.DataFrame):
     df = df.copy()
     median_lon = df['lon'].median()
     median_lat = df['lat'].median()
@@ -34,19 +43,105 @@ def add_utm_coordinates(df: pd.DataFrame) -> pd.DataFrame:
         df.loc[valid, 'lat'].values
     )
 
-    #Origin subtraction for positional anonymization
-    origin_x = np.nanmedian(x)
-    origin_y = np.nanmedian(y)
-    x, y = x - origin_x, y - origin_y      
-
-
     df['x'] = x
     df['y'] = y
 
     hemi = 'N' if median_lat >= 0 else 'S'
     print(f"  UTM Zone {zone}{hemi} (EPSG:{epsg})")
-    print(f"  x: {df['x'].min():.0f} – {df['x'].max():.0f} m")
-    print(f"  y: {df['y'].min():.0f} – {df['y'].max():.0f} m")
+    return df, epsg
+
+def fetch_osm_water_features(west, south, east, north) -> gpd.GeoDataFrame:
+    tags = {
+        "natural": "water",      
+        "waterway": True,        
+        "landuse": ["harbour", "port"], 
+        "harbour": True,         
+        "leisure": "marina",     
+        "bay": True,
+        "lock": True
+    }
+    
+    try:
+        # Create a polygon from the bounding box to be version-safe with OSMnx
+        bounding_polygon = box(west, south, east, north)
+        print(f"  Fetching OSM data for Bounding Box...")
+        gdf = ox.features_from_polygon(bounding_polygon, tags)
+    except Exception as e:
+        print(f"  WARNING: Failed to fetch OSM data: {e}")
+        return None
+
+    if gdf.empty:
+        return None
+
+    def categorize(row): # same logic as in assign_relevant_waterway
+        waterway = str(row.get('waterway', '')).lower()
+        water = str(row.get('water', '')).lower()
+        lock = str(row.get('lock', '')).lower()
+
+        if waterway == 'lock' or water == 'lock' or lock in ['yes', 'true', '1']:
+            return 'lock'
+        if waterway == 'river' or water == 'river':
+            return 'river'
+        if waterway == 'canal' or water in ['canal', 'channel']:
+            return 'channel'
+        
+        unwanted = {'drain', 'ditch', 'stream', 'swimming_pool', 'reflecting_pool', 'wastewater'}
+        if waterway in unwanted or water in unwanted:
+            return 'remove'
+        return 'harbour'
+
+    gdf['water_class'] = gdf.apply(categorize, axis=1)
+    gdf = gdf[gdf['water_class'] != 'remove']
+    
+    valid_geoms = {'Polygon', 'MultiPolygon', 'LineString', 'MultiLineString'}
+    return gdf[gdf.geometry.type.isin(valid_geoms)].copy()
+
+def assign_water_context(df: pd.DataFrame, epsg: str) -> pd.DataFrame:
+    # 1. bounding box from actual ship coordinates with a buffer of ~5km (0.05 degrees) to ensure ships near the edge can still find water features
+    pad = 0.05
+    west = df['lon'].min() - pad
+    east = df['lon'].max() + pad
+    south = df['lat'].min() - pad
+    north = df['lat'].max() + pad
+
+    osm_gdf = fetch_osm_water_features(west, south, east, north)
+    
+    if osm_gdf is None or osm_gdf.empty:
+        print("  WARNING: No OSM data found in this area.")
+        df['context'] = 'unknown'
+        return df
+
+    osm_gdf = osm_gdf.to_crs(f"EPSG:{epsg}")
+
+    gdf_points = gpd.GeoDataFrame(
+        df, 
+        geometry=gpd.points_from_xy(df.x, df.y), 
+        crs=f"EPSG:{epsg}"
+    )
+
+    # high tolerance, but we do a manual inspection later
+    joined = gpd.sjoin_nearest(
+        gdf_points, 
+        osm_gdf[['water_class', 'geometry']], 
+        how='left', 
+        max_distance=500
+    )
+
+    priority_map = {'lock': 1, 'channel': 2, 'river': 3, 'harbour': 4, 'unknown': 5}
+    
+    joined['point_id'] = joined.index
+    joined['priority'] = joined['water_class'].map(priority_map).fillna(99)
+    
+    joined = joined.sort_values(['point_id', 'priority'])
+    
+    #keep only the highest priority context for each point_id
+    joined = joined[~joined['point_id'].duplicated(keep='first')]
+    
+    df['context'] = joined['water_class'].fillna('unknown')
+    
+    counts = df['context'].value_counts().to_dict()
+    print(f"  Context labels assigned: {counts}")
+    
     return df
 
 
@@ -87,14 +182,13 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     # 1. Geographic bounds filter (dataset-specific). very vague for now, just to catch obvious outliers and coordinate errors. to be reifined later for missisipi dataset.
     n_pre_geo = len(df)  
 
-    if 'bremerhaven' in df['dataset'].iloc[0].lower():
-        mask = df['lat'].between(50, 60) & df['lon'].between(5, 10)
-    elif 'kiel' in df['dataset'].iloc[0].lower():
-        mask = df['lat'].between(50, 62) & df['lon'].between(8, 12)
-    elif 'marinecadastre' in df['dataset'].iloc[0].lower():
-        mask = df['lat'].between(28.8, 35.2) & df['lon'].between(-91.0, -88.8) # TODO polygon later
+    dataset_name = df['dataset'].iloc[0].lower()
+    if 'bremerhaven' in dataset_name:
+        mask = df['lat'].between(53.40, 54) & df['lon'].between(8, 8.8)
+    elif 'kiel' in dataset_name:
+        mask = df['lat'].between(53.5, 54.5) & df['lon'].between(9.2, 11.5)
     else:
-        mask = pd.Series(True, index=df.index)
+        raise ValueError(f"Unknown dataset for geographic bounds filter: {dataset_name}")
 
     df = df[mask].copy()
     print(f"  Geographic filter kept {len(df):,} / {n_pre_geo:,} rows")
@@ -116,14 +210,23 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     print(f"  Duplicates removed: {n_before_dedup - len(df):,}")
 
     # 4. UTM coordinate conversion
-    df = add_utm_coordinates(df)
+    df, epsg = add_utm_coordinates(df)
+    
+    # Neu: Wasser-Kategorien (Context Labeling) zuordnen, solange die Koordinaten absolut sind
+    df = assign_water_context(df, epsg)
 
-    # Reorder columns: insert x, y after lon
+    # Origin subtraction for positional anonymization (Moved from add_utm_coordinates)
+    origin_x = np.nanmedian(df['x'])
+    origin_y = np.nanmedian(df['y'])
+    df['x'] = df['x'] - origin_x
+    df['y'] = df['y'] - origin_y
+
+    # Reorder columns: insert x, y, context after lon
     cols = list(df.columns)
     if 'x' in cols and 'y' in cols:
-        cols = [c for c in cols if c not in ('x', 'y')]
+        cols = [c for c in cols if c not in ('x', 'y', 'context')]
         lon_idx = cols.index('lon')
-        cols = cols[:lon_idx+1] + ['x', 'y'] + cols[lon_idx+1:]
+        cols = cols[:lon_idx+1] + ['x', 'y', 'context'] + cols[lon_idx+1:]
         df = df[cols]
 
     #Remove position jumps per vessel and filter out vessels that exceed speed threshold 
