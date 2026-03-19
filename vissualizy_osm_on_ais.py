@@ -74,4 +74,4 @@ if __name__ == "__main__":
         print(f"No cleaned CSV files found in {cleaned_dir}")
     else:
         # Plot the first file found
-        plot_context_assignments(files[0])
+        plot_context_assignments(files[2])

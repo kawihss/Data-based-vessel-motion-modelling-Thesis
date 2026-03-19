@@ -20,7 +20,7 @@ LOW_SPEED_FRAC_MAX = 0.5
 def infer_freq_from_name(name: str) -> int:
     """Infer sampling frequency from filename."""
     lower = name.lower()
-    if 'kiel' in lower or 'bremerhaven' in lower:
+    if 'kiel' in lower or 'bremerhaven' in lower or 'wedel' in lower:
         return 30
     elif 'marinecadastre' in lower or 'mississippi' in lower:
         return 60

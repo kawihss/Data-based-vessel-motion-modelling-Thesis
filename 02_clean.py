@@ -187,6 +187,8 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
         mask = df['lat'].between(53.40, 54) & df['lon'].between(8, 8.8)
     elif 'kiel' in dataset_name:
         mask = df['lat'].between(53.5, 54.5) & df['lon'].between(9.2, 11.5)
+    elif 'wedel' in dataset_name:
+        mask = df['lat'].between(53, 54) & df['lon'].between(9, 10.5)
     else:
         raise ValueError(f"Unknown dataset for geographic bounds filter: {dataset_name}")
 

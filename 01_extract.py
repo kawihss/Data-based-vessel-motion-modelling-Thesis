@@ -326,6 +326,12 @@ if __name__ == "__main__":
              'output': 'output/01_raw/processed_ais_bremerhaven_20180404.csv',
              'parser': 'kiel'
         },
+                {
+             'name': 'wedel',
+             'file': 'Data/Wedel/ship_emissions_Wedel_AIS_shipdata_20220405.log.txt',
+             'output': 'output/01_raw/processed_Wedel_AIS_shipdata_20220405.csv',
+             'parser': 'kiel'
+        },
         #{
         #    'name': 'marinecadastre',
         #    'file': 'Data/Mississippi/AIS_2024_01_01.csv',

@@ -15,7 +15,7 @@ NOAA_FREQ_S   = 60
 def infer_freq_from_name(name: str) -> int:
     """Map filename to resampling frequency in seconds."""
     lower = name.lower()
-    if 'kiel' in lower or 'bremerhaven' in lower:
+    if 'kiel' in lower or 'bremerhaven' in lower or 'wedel' in lower:
         return GERMAN_FREQ_S
     if 'marinecadastre' in lower or 'mississippi' in lower:
         return NOAA_FREQ_S
