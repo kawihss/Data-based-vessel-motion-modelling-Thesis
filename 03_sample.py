@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime
 
 # Global resampling frequencies (seconds)
-GERMAN_FREQ_S = 10
+GERMAN_FREQ_S = 30
 NOAA_FREQ_S   = 60
 
 
@@ -55,6 +55,9 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
         new_idx = pd.date_range(t_start, t_end, freq=f'{freq_s}s') #new time grid for resampling
 
         g_resampled = g.reindex(g.index.union(new_idx)) # add new timestamps with NaN values, will be filled by interpolation
+        
+        if 'context' in g_resampled.columns:
+            g_resampled['context'] = g_resampled['context'].ffill().bfill() # use ffill to propagate last known context, bfill to handle leading NaNs if first point is after t_start
         num_cols = g.select_dtypes(include=[np.number]).columns.tolist() # only interpolate numeric columns, dt separat 
         if 'dt' in num_cols:
             num_cols.remove('dt') # dt is computed later based on real timestamps

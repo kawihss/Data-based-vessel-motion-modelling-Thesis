@@ -1,3 +1,7 @@
+# 04_track_segmentation.py: Slicing trajectories into samples based on time and context
+# Input:  output/03_sampled/*.csv
+# Output: output/04_trajectories/*.csv
+
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -6,23 +10,23 @@ from datetime import timedelta
 # To avoid data leakage, we split unique 'vessel_ids'. See thesis text
 
 # --- CONFIGURATION ---
-WINDOW_DUR = timedelta(minutes=10)
+WINDOW_DUR = timedelta(minutes=2)
 PRED_HORIZON = timedelta(minutes=2)
-STRIDE_DUR = timedelta(minutes=2)  # Set to 10s for original behavior, 2m+ for efficiency
-MIN_SOG = 1.0 
-LOW_SPEED_THRESH = 2.0 
-LOW_SPEED_FRAC_MAX = 0.3
+STRIDE_DUR = timedelta(minutes=1)  # how much to slide the window for the next sample, smaller means more samples but more overlap
+MIN_SOG = 0.5 
+LOW_SPEED_THRESH = 1.0 
+LOW_SPEED_FRAC_MAX = 0.5
 
 def infer_freq_from_name(name: str) -> int:
     """Infer sampling frequency from filename."""
     lower = name.lower()
     if 'kiel' in lower or 'bremerhaven' in lower:
-        return 10
+        return 30
     elif 'marinecadastre' in lower or 'mississippi' in lower:
         return 60
-    return 10
+    return 30
 
-def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: int):# efficient means with overlap
+def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: int):
     """
     Slices the vessel trajectory into context/prediction pairs using a stride.
     """
@@ -94,6 +98,9 @@ if __name__ == '__main__':
     input_files = sorted(input_dir.glob('*.csv'))
     global_track_counter = 0
     
+    # Counter for segments lost to context cuts
+    total_short_cuts = 0
+
     for src in input_files:
         print(f"\n{'='*60}")
         print(f"Processing: {src.name}")
@@ -101,63 +108,73 @@ if __name__ == '__main__':
         df = pd.read_csv(src, parse_dates=['t_utc'])
         freq_s = infer_freq_from_name(src.name)
         
-        # 1. Split vessels into train/val/test based on unique vessel_ids to avoid data leakage, see thesis text
+        # 1. Split vessels into train/val/test
         np.random.seed(42)
         all_vessels = df['vessel_id'].unique()
         np.random.shuffle(all_vessels)
         
-        # 2. Define splits (60% train, 20% val, 20% test)
         n_vessels = len(all_vessels)
         split_train = int(0.60 * n_vessels)
         split_val   = int(0.80 * n_vessels)
         
         vessels_train = set(all_vessels[:split_train])
         vessels_val   = set(all_vessels[split_train:split_val])
-        vessels_test  = set(all_vessels[split_val:])
         
-        # Containers for segments
-        split_segments = {
-            "train": [],
-            "val": [],
-            "test": []
-        }
+        split_segments = {"train": [], "val": [], "test": []}
         
-        # 3. Generate Segments for each vessel and assign to splits
+        # 2. Generate Segments: Split by vessel AND context change
         vessel_groups = df.groupby('vessel_id')
-        for v_id, v_data in vessel_groups:
-            segments, global_track_counter = create_samples_efficient(
-                v_data, freq_s, global_track_counter
-            )
-            
-            if v_id in vessels_train:
-                split_segments["train"].extend(segments)
-            elif v_id in vessels_val:
-                split_segments["val"].extend(segments)
-            else:
-                split_segments["test"].extend(segments)
+        min_pts_required = int((WINDOW_DUR + PRED_HORIZON).total_seconds() / freq_s)
 
-        # 4. Process each split: apply speed filters and save
+        for v_id, v_data in vessel_groups:
+            v_data = v_data.sort_values('t_utc')
+            
+            # Label stability fix (2-min rolling mode)
+            c_map = {c: i for i, c in enumerate(v_data['context'].unique())}
+            v_data['context'] = v_data['context'].map(c_map).rolling(6, min_periods=1).apply(
+                lambda x: pd.Series(x).mode()[0]).map({i: c for c, i in c_map.items()})
+
+            # --- CONTEXT SPLIT LOGIC ---
+            # Identifies where context changes within the same vessel
+            context_changed = v_data['context'] != v_data['context'].shift(1)
+            v_data['context_group'] = context_changed.cumsum()
+            
+            for _, sub_data in v_data.groupby('context_group'):
+                if len(sub_data) < min_pts_required:
+                    total_short_cuts += 1
+                    continue
+                
+                segments, global_track_counter = create_samples_efficient(
+                    sub_data, freq_s, global_track_counter
+                )
+                
+                # Assign to splits
+                target = "test"
+                if v_id in vessels_train: target = "train"
+                elif v_id in vessels_val: target = "val"
+                split_segments[target].extend(segments)
+
+        # 3. Process each split: apply speed filters and save
         for split_name, segments in split_segments.items():
             if not segments:
                 print(f" ! No segments generated for {split_name} split in {src.name}")
                 continue
             
-            # Combine all tracks for this split
             split_df = pd.concat(segments, ignore_index=True)
             
-            # Apply speed filters to this split
-            print(f"Processing {split_name} split")
-            filtered_split_df = apply_speed_filters(split_df)
-            
-            if filtered_split_df.empty:
-                print(f" ! No tracks remained after filtering for {split_name}")
-                continue
+            # Group by context before filtering and saving
+            for context_label, context_df in split_df.groupby('context'):
+                if context_label == 'unknown':
+                    continue
+                print(f"Processing {split_name} split - Context: {context_label}")
+                filtered_df = apply_speed_filters(context_df)
                 
-            # Save to disk
-            dst = output_dir / f"{split_name}_{src.name}"
-            filtered_split_df.to_csv(dst, index=False)
+                if not filtered_df.empty:
+                    # Filename now includes the context_label
+                    dst = output_dir / f"{split_name}_{context_label}_{src.name}"
+                    filtered_df.to_csv(dst, index=False)
+                    n_tracks = filtered_df['track_id'].nunique()
+                    print(f" Saved {n_tracks:,} tracks to {dst.name}")
             
-            n_tracks = filtered_split_df['track_id'].nunique()
-            print(f" Saved {n_tracks:,} tracks to {dst.name}")
-            
-        print(f"Finished processing {src.name}")
+    print(f"\nFinal Report: {total_short_cuts} segments were too short after context-splitting and were discarded.")
+    print(f"Finished processing all files.")
