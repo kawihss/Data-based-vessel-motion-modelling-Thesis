@@ -1,6 +1,8 @@
 #ignore /Directories 
 Data/
 output/
+cache/
+.vscode/
 
 #ignore /File types
 *.csv

@@ -52,7 +52,6 @@ def parse_timestamp(ts_str):
         return pd.to_datetime(ts_str, format='%y%m%d %H%M%S')
     except:
         return pd.NaT
-    df['t_utc'] = pd.to_datetime(df['t_utc'], errors='coerce')
 
 
 def load_ais_data(filepath, dataset_name):
