@@ -234,18 +234,15 @@ if __name__ == "__main__":
 
     # Process each dataset
     for dataset_config in datasets:
-        # Select appropriate parser
-        if dataset_config.get('parser') == 'marinecadastre':
-            df = load_marinecadastre_ais(
-                filepath=dataset_config['file'],
-                dataset_name=dataset_config['name'],
-            )
-        else:
+        if dataset_config['parser'] == 'kiel':
             # Default: Kiel/Bremerhaven format
             df = load_ais_data(
                 filepath=dataset_config['file'],
                 dataset_name=dataset_config['name'],
             )
+        else:
+            print(f"Unknown parser type for dataset {dataset_config['name']}")
+            continue
 
         if df is not None and not df.empty:
             # Define core columns (always present)

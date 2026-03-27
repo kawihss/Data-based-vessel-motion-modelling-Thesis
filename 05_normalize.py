@@ -10,7 +10,7 @@ from pathlib import Path
 import joblib
 from sklearn.preprocessing import StandardScaler
 
-NUMERIC_FEATURES = ['dx', 'dy', 'sog', 'cog_sin', 'cog_cos', 'dt']
+NUMERIC_FEATURES = ['dx', 'dy', 'sog', 'cog_sin', 'cog_cos', 'dt'; 'rot']
 
 
 def compute_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -45,7 +45,7 @@ def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False, verbose=True):
         index=df.index
     )
 
-    keep_cols = ['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog']
+    keep_cols = ['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog', 'rot']
    
     df_out = pd.concat([df[keep_cols], df_numeric], axis=1)
 
