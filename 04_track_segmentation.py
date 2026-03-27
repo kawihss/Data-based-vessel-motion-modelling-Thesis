@@ -10,9 +10,9 @@ from datetime import timedelta
 # To avoid data leakage, we split unique 'vessel_ids'. See thesis text
 
 # --- CONFIGURATION ---
-WINDOW_DUR = timedelta(minutes=2)
-PRED_HORIZON = timedelta(minutes=2)
-STRIDE_DUR = timedelta(minutes=1)  # how much to slide the window for the next sample, smaller means more samples but more overlap
+WINDOW_DUR = timedelta(minutes=5)
+PRED_HORIZON = timedelta(minutes=5)
+STRIDE_DUR = timedelta(minutes=1)  # how much to slide the window for the next sample, smaller means more samples but more overlap. Adjust to get -150-200k Samples per domain
 MIN_SOG = 0.5 
 LOW_SPEED_THRESH = 1.0 
 LOW_SPEED_FRAC_MAX = 0.5
@@ -114,8 +114,8 @@ if __name__ == '__main__':
         np.random.shuffle(all_vessels)
         
         n_vessels = len(all_vessels)
-        split_train = int(0.60 * n_vessels)
-        split_val   = int(0.80 * n_vessels)
+        split_train = int(0.70 * n_vessels)
+        split_val   = int(0.85 * n_vessels)
         
         vessels_train = set(all_vessels[:split_train])
         vessels_val   = set(all_vessels[split_train:split_val])
