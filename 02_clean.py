@@ -273,7 +273,7 @@ if __name__ == "__main__":
 
         dst = output_dir / src.name
         df.to_csv(dst, index=False)
-        print(f"✓ Saved: {dst}")
+        print(f"Saved: {dst}")
 
         total_in  += n_in
         total_out += n_out

@@ -35,6 +35,32 @@ def split_long_gaps(df: pd.DataFrame, max_gap_s: int) -> pd.DataFrame:
     
     return df.drop(columns=['dt', 'gap_break', 'segment_id'])
 
+
+def calculate_rot(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
+
+    # Calculate raw COG difference per vessel
+    diff_cog = df.groupby('vessel_id')['cog'].diff().fillna(0)
+    
+    # Wrap-around handling
+    diff_cog = (diff_cog + 180) % 360 - 180
+    
+    # Convert to °/min (freq_s is constant after resampling)
+    df['rot'] = diff_cog / (freq_s / 60.0)
+    
+    return df
+
+
+def filter_unrealistic_rot(df: pd.DataFrame, max_rot=90.0) -> pd.DataFrame:
+ # throw out all columns with ROT above threshold, gaps handled in 04_track_segmentation by  time gap guard
+    mask = (df['rot'].abs() <= max_rot) | (df['rot'].isna()) 
+    
+    dropped = len(df) - mask.sum()
+    if dropped > 0:
+        print(f"    ROT-Filter: {dropped} unrealistische Datenpunkte (> {max_rot}°/min) entfernt.")
+        
+    return df[mask].reset_index(drop=True)
+
+
 def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
     """Resample all vessel trajectories in df to fixed freq_s using time-linear interp."""
     df = split_long_gaps(df, max_gap_s=3 * freq_s)
@@ -122,6 +148,10 @@ if __name__ == '__main__':
         print(f'  Using frequency: {freq_s}s')
 
         df_resampled = resample_dataset(df, freq_s=freq_s)
+
+        df_resampled = calculate_rot(df_resampled, freq_s=freq_s)#unfortunately in sample but we want to use resampeld timestamps
+        #df_resampled = filter_unrealistic_rot(df_resampled, max_rot=90.0)
+
         n_out = len(df_resampled)
 
         dst = output_dir / src.name
