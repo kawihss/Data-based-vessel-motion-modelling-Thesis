@@ -10,7 +10,7 @@ from pathlib import Path
 import joblib
 from sklearn.preprocessing import StandardScaler
 
-NUMERIC_FEATURES = ['dx', 'dy', 'sog', 'cog_sin', 'cog_cos', 'dt'; 'rot']
+NUMERIC_FEATURES = ['dx', 'dy', 'sog', 'cog_sin', 'cog_cos', 'dt', 'rot']
 
 
 def compute_features(df: pd.DataFrame) -> pd.DataFrame:
