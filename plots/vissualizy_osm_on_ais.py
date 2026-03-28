@@ -27,13 +27,13 @@ def plot_context_assignments(csv_path: Path):
     plot_order = [
         {'label': 'unknown', 'z': 1, 'alpha': 0.1, 's': 1},
         {'label': 'harbour', 'z': 2, 'alpha': 0.3, 's': 1},
-        {'label': 'river',   'z': 3, 'alpha': 0.6, 's': 2},
-        {'label': 'channel', 'z': 4, 'alpha': 0.8, 's': 2},
+        {'label': 'channel', 'z': 3, 'alpha': 0.8, 's': 2},
+        {'label': 'river',   'z': 4, 'alpha': 0.6, 's': 2},
         {'label': 'lock',    'z': 5, 'alpha': 1.0, 's': 15}  # Emphasize locks
     ]
     
     fig, ax = plt.subplots(figsize=(12, 12))
-    ax.set_facecolor('#f0f0f0')  # Light grey background to contrast missing data areas
+    ax.set_facecolor('#f0f0f0') 
     
     # 3. Scatter plot for each context group
     for config in plot_order:
@@ -73,5 +73,5 @@ if __name__ == "__main__":
     if not files:
         print(f"No cleaned CSV files found in {cleaned_dir}")
     else:
-        # Plot the first file found
-        plot_context_assignments(files[1])
+        for csv_file in files:
+            plot_context_assignments(csv_file)

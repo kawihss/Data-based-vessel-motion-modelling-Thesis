@@ -96,7 +96,7 @@ def fetch_osm_water_features(west, south, east, north) -> gpd.GeoDataFrame:
     valid_geoms = {'Polygon', 'MultiPolygon', 'LineString', 'MultiLineString'}
     return gdf[gdf.geometry.type.isin(valid_geoms)].copy()
 
-def assign_water_context(df: pd.DataFrame, epsg: str) -> pd.DataFrame:
+def assign_water_context(df: pd.DataFrame, epsg: str, dataset_name: str) -> pd.DataFrame:
     # 1. bounding box from actual ship coordinates with a buffer of ~5km (0.05 degrees) to ensure ships near the edge can still find water features
     pad = 0.05
     west = df['lon'].min() - pad
@@ -113,21 +113,50 @@ def assign_water_context(df: pd.DataFrame, epsg: str) -> pd.DataFrame:
 
     osm_gdf = osm_gdf.to_crs(f"EPSG:{epsg}")
 
+ 
+
+    if 'bremerhaven' in dataset_name:
+        buffer_radii = {
+            'lock': 50,       
+            'channel': 0,     # no channel that should be assigned in bremerhaven
+            'river': 250,     
+            'harbour': 800    
+        }
+    elif 'kiel' in dataset_name:
+        buffer_radii = {
+            'lock': 50,       
+            'channel': 50,    # Nord-Ostsee-Kanal
+            'river': 250,     
+            'harbour': 1000   
+        }
+    else: # Default (Wedel)
+        buffer_radii = {
+            'lock': 0,     # no locks in Wedel 
+            'channel': 50,    
+            'river': 250,     
+            'harbour': 0 # There are harbours in Wedel but they are small and close to the river, no harbour in our sense    
+            #having a buffer as big as in the others would include outliers (see pink points in visualize_osm_on_ais.py in wedel)
+        }
+    
+    osm_gdf['geometry'] = osm_gdf.apply(
+        lambda row: row.geometry.buffer(buffer_radii.get(row.water_class, 50)), 
+        axis=1
+    )
+
     gdf_points = gpd.GeoDataFrame(
         df, 
         geometry=gpd.points_from_xy(df.x, df.y), 
         crs=f"EPSG:{epsg}"
     )
 
-    # high tolerance, but we do a manual inspection later
-    joined = gpd.sjoin_nearest(
+    joined = gpd.sjoin(
         gdf_points, 
         osm_gdf[['water_class', 'geometry']], 
         how='left', 
-        max_distance=500
+        predicate='within'
     )
 
-    priority_map = {'lock': 1, 'channel': 2, 'river': 3, 'harbour': 4, 'unknown': 5}
+    priority_map = {'lock': 1, 'river': 2, 'channel': 3, 'harbour': 4, 'unknown': 5}#todo in thesis reihenfolge anpassen
     
     joined['point_id'] = joined.index
     joined['priority'] = joined['water_class'].map(priority_map).fillna(99)
@@ -215,7 +244,7 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     df, epsg = add_utm_coordinates(df)
     
     # Neu: Wasser-Kategorien (Context Labeling) zuordnen, solange die Koordinaten absolut sind
-    df = assign_water_context(df, epsg)
+    df = assign_water_context(df, epsg, dataset_name)
 
     # Origin subtraction for positional anonymization (Moved from add_utm_coordinates)
     origin_x = np.nanmedian(df['x'])

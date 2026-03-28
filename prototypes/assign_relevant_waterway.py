@@ -2,6 +2,12 @@ import osmnx as ox
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
+ox.settings.overpass_endpoint = "https://overpass.kumi.systems/api/interpreter"
+ox.settings.max_query_area_size = 5 * 1e9  
+ox.settings.timeout = 600
+
+
+
 def get_water_features(place_name="Kiel, Germany"):
     """
     Fetches and categorizes OSM water features into river, channel, lock, and other.
@@ -78,7 +84,7 @@ def plot_water_features(gdf, place_name):
     plt.show()
 
 if __name__ == "__main__":
-    place = "Kiel, Germany"  # Kiel has prominent locks (Holtenau) for the Nord-Ostsee-Kanal!
+    place = "Wedel, Germany"  
     print(f"Processing {place}...")
     
     gdf_water = get_water_features(place)
