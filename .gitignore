@@ -3,7 +3,10 @@ Data/
 output/
 cache/
 .vscode/
+venv/
 
 #ignore /File types
 *.csv
 *.log.txt
+*.log
+*.out

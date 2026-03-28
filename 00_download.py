@@ -41,7 +41,7 @@ def download_dataset(feed_url, output_dir):
             print(f"  [{i+1}/{len(links)}] skipping {filename} (already exists)")
             continue
             
-        print(f"  [{i+1}/{len(links)}] Lade {filename} ...")
+        print(f"  [{i+1}/{len(links)}] Loading {filename} ...")
         
         try:
             # Use stream=True to download large files in chunks safely
