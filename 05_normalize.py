@@ -27,7 +27,7 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False, verbose=True):
+def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False):
     """Compute features per track, then z-score."""
 
     df = compute_features(df)

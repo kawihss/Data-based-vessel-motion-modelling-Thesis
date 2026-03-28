@@ -8,6 +8,7 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 
+TEST_LIMIT = None #5  # Limit number of files per dataset for testing, set to inf
 
 def parse_coordinate(coord_str):
     """Parse coordinate string like '54.419327N' or '10.280777E'"""
@@ -80,10 +81,10 @@ def load_ais_data(filepath, dataset_name):
             for line_count, line in enumerate(f, 1):
 
                 # Progress update every 50k lines
-                if line_count % 50000 == 0:
-                    print(f"  Processed {line_count:,} lines | "
-                          f"Extracted {len(position_records):,} reports | "
-                          f"Errors: {sum(errors.values())}")
+                #if line_count % 50000 == 0:
+                #    print(f"  Processed {line_count:,} lines | "
+                #          f"Extracted {len(position_records):,} reports | "
+                #          f"Errors: {sum(errors.values())}")
 
                 fields = line.strip().split(';') # semicolon delimited for Kiel/Bremerhaven datasets
 
@@ -181,88 +182,66 @@ def load_ais_data(filepath, dataset_name):
     # Sort by vessel_id and timestamp
     df = df.sort_values(['vessel_id', 't_utc']).reset_index(drop=True)
 
-    print(f"\nDataset summary:")
+    #print(f"\nDataset summary:")
     print(f"  Unique vessels: {df['vessel_id'].nunique()}")
-    print(f"  Time range: {df['t_utc'].min()} to {df['t_utc'].max()}")
-    print(f"  Duration: {df['t_utc'].max() - df['t_utc'].min()}")
-    print(f"  Geographic bounds:")
-    print(f"    Lat: {df['lat'].min():.4f}°N to {df['lat'].max():.4f}°N")
-    print(f"    Lon: {df['lon'].min():.4f}°E to {df['lon'].max():.4f}°E")
+    #print(f"  Time range: {df['t_utc'].min()} to {df['t_utc'].max()}")
+    #print(f"  Duration: {df['t_utc'].max() - df['t_utc'].min()}")
+    #print(f"  Geographic bounds:")
+    #print(f"    Lat: {df['lat'].min():.4f}°N to {df['lat'].max():.4f}°N")
+    #print(f"    Lon: {df['lon'].min():.4f}°E to {df['lon'].max():.4f}°E")
 
     return df
 
 
   
 
-
 # Usage
 if __name__ == "__main__":
 
-    # Define datasets
-    datasets = [
-        {
-             'name': 'kiel',
-             'file': 'Data/Kiel/ship_emissions_Kiel_AIS_shipdata_20210701.log.txt',
-             'output': 'output/01_raw/processed_ais_kiel_20210701.csv',
-             'parser': 'kiel'
-        },
-        #{
-        #     'name': 'kiel',
-        #     'file': 'Data/Kiel/ship_emissions_Kiel_AIS_shipdata_20250813.log.txt',
-        #     'output': 'output/01_raw/processed_ais_kiel_20250813.csv',
-        #     'parser': 'kiel'
-        #},
-        {
-             'name': 'bremerhaven',
-             'file': 'Data/Bremerhaven/ship_emissions_Bremerhaven_AIS_shipdata_20180404.log.txt',
-             'output': 'output/01_raw/processed_ais_bremerhaven_20180404.csv',
-             'parser': 'kiel'
-        },
-                {
-             'name': 'wedel',
-             'file': 'Data/Wedel/ship_emissions_Wedel_AIS_shipdata_20220405.log.txt',
-             'output': 'output/01_raw/processed_Wedel_AIS_shipdata_20220405.csv',
-             'parser': 'kiel'
-        },
-  
-    ]
+    dataset_dirs = {
+        'kiel': Path('Data/Kiel'),
+        'bremerhaven': Path('Data/Bremerhaven'),
+        'wedel': Path('Data/Wedel')
+    }
 
-    # Create output directory
-    Path('output/01_raw').mkdir(parents=True, exist_ok=True)
+    output_dir = Path('output/01_raw')
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    all_data = []
+    # Core columns to ensure consistent structure
+    core_columns = ['dataset', 't_utc', 'vessel_id', 'lat', 'lon', 'sog', 'cog', 'heading', 'rot']
+    optional_columns = ['nav_status', 'true_heading', 'vessel_name', 'imo', 'call_sign', 'vessel_type', 'length', 'width', 'draft', 'cargo']
 
-    # Process each dataset
-    for dataset_config in datasets:
-        if dataset_config['parser'] == 'kiel':
-            # Default: Kiel/Bremerhaven format
-            df = load_ais_data(
-                filepath=dataset_config['file'],
-                dataset_name=dataset_config['name'],
-            )
-        else:
-            print(f"Unknown parser type for dataset {dataset_config['name']}")
+    for dataset_name, data_path in dataset_dirs.items():
+        if not data_path.exists():
+            print(f"Directory not found: {data_path}")
             continue
 
-        if df is not None and not df.empty:
-            # Define core columns (always present)
-            core_columns = ['dataset', 't_utc', 'vessel_id', 'lat', 'lon', # 'x', 'y', 
-                          'sog', 'cog', 'heading', 'rot']
-
-            # Define optional columns (may or may not be present)
-            optional_columns = ['nav_status', 'true_heading', 'vessel_name', 'imo', 
-                              'call_sign', 'vessel_type', 'length', 'width', 'draft', 'cargo']
-
-            # Reorder: core first, then optional (only if present)
-            column_order = core_columns + [col for col in optional_columns if col in df.columns]
-            df = df[[col for col in column_order if col in df.columns]]
-
-            # Save individual dataset
-            df.to_csv(dataset_config['output'], index=False)
-            print(f"Saved to: {dataset_config['output']}")
-            print(f"Records: {len(df):,} from {df['vessel_id'].nunique()} vessels")
+        # Find all .log files downloaded from GovData (ignore old txt files)
+        valid_files = list(data_path.glob("*.log")) 
+        if TEST_LIMIT:
+            valid_files = valid_files[:TEST_LIMIT]
 
 
-        else:
-            print(f"Failed to process {dataset_config['name']}")
+        if not valid_files:
+            print(f"No files found in {data_path}")
+            continue
+            
+        for file_path in valid_files:
+            # Create a unique output name based on the original file
+            out_filename = f"processed_{dataset_name}_{file_path.stem}.csv"
+            out_path = output_dir / out_filename
 
+            # Skip if already processed
+            if out_path.exists():
+                print(f"Skipping {file_path.name}, output already exists.")
+                continue
+
+            df = load_ais_data(filepath=file_path, dataset_name=dataset_name)
+
+            if df is not None and not df.empty:
+                column_order = core_columns + [col for col in optional_columns if col in df.columns]
+                df = df[[col for col in column_order if col in df.columns]]
+
+                df.to_csv(out_path, index=False)
+                print(f"Saved to: {out_path}")
+                print(f"Records: {len(df):,} from {df['vessel_id'].nunique()} vessels\n")
