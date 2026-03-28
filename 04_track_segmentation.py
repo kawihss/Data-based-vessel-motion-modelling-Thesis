@@ -18,12 +18,12 @@ LOW_SPEED_THRESH = 1.0
 LOW_SPEED_FRAC_MAX = 0.5
 
 def infer_freq_from_name(name: str) -> int:
-    """Infer sampling frequency from filename."""
-    lower = name.lower()
-    if 'kiel' in lower or 'bremerhaven' in lower or 'wedel' in lower:
-        return 30
-    elif 'marinecadastre' in lower or 'mississippi' in lower:
-        return 60
+    #"""Infer sampling frequency from filename."""
+    #lower = name.lower()
+    #if 'kiel' in lower or 'bremerhaven' in lower or 'wedel' in lower:
+     #   return 30
+    #elif 'marinecadastre' in lower or 'mississippi' in lower:
+    #   return 60
     return 30
 
 def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: int):
@@ -90,6 +90,27 @@ def apply_speed_filters(df: pd.DataFrame) -> pd.DataFrame:
 
     return df[df['track_id'].isin(valid_ids)].copy()
 
+def smooth_context_labels(context_series, window_size=6):
+    """
+    Applies a rolling majority vote to string labels to remove GNSS jitter.
+    Pandas rolling() requires numeric data, so we temporarily map strings to integers.
+    """
+    #Create mapping dictionaries
+    unique_labels = context_series.unique()
+    label_to_int = {label: i for i, label in enumerate(unique_labels)}
+    int_to_label = {i: label for label, i in label_to_int.items()}
+    
+    # Map string labels to integers for rolling operation
+    numeric_series = context_series.map(label_to_int)
+    
+    # Apply rolling window to find the most common integer (mode)
+    smoothed_numeric = numeric_series.rolling(window=window_size, min_periods=1).apply(
+        lambda x: pd.Series(x).mode()[0]
+    )
+    
+    # Map back to original string labels
+    return smoothed_numeric.map(int_to_label)
+
 if __name__ == '__main__':
     input_dir = Path('output/03_sampled')
     output_dir = Path('output/04_trajectories')
@@ -98,7 +119,6 @@ if __name__ == '__main__':
     input_files = sorted(input_dir.glob('*.csv'))
     global_track_counter = 0
     
-    # Counter for segments lost to context cuts
     total_short_cuts = 0
 
     for src in input_files:
@@ -108,7 +128,7 @@ if __name__ == '__main__':
         df = pd.read_csv(src, parse_dates=['t_utc'])
         freq_s = infer_freq_from_name(src.name)
         
-        # 1. Split vessels into train/val/test
+        #Split vessels into train/val/test
         np.random.seed(42)
         all_vessels = df['vessel_id'].unique()
         np.random.shuffle(all_vessels)
@@ -122,7 +142,7 @@ if __name__ == '__main__':
         
         split_segments = {"train": [], "val": [], "test": []}
         
-        # 2. Generate Segments: Split by vessel AND context change
+        #Generate Segments: Split by vessel AND context change
         vessel_groups = df.groupby('vessel_id')
         min_pts_required = int((WINDOW_DUR + PRED_HORIZON).total_seconds() / freq_s)
 
@@ -130,11 +150,14 @@ if __name__ == '__main__':
             v_data = v_data.sort_values('t_utc')
             
             # Label stability fix (2-min rolling mode)
+            # Note: Complex mapping required because pandas lacks a native rolling string mode.
             c_map = {c: i for i, c in enumerate(v_data['context'].unique())}
-            v_data['context'] = v_data['context'].map(c_map).rolling(6, min_periods=1).apply(
-                lambda x: pd.Series(x).mode()[0]).map({i: c for c, i in c_map.items()})
+            #v_data['context'] = v_data['context'].map(c_map).rolling(6, min_periods=1).apply(
+            #    lambda x: pd.Series(x).mode()[0]).map({i: c for c, i in c_map.items()})
+            # Label stability fix (rolling mode to smooth GNSS jitter)
+            v_data['context'] = smooth_context_labels(v_data['context'], window_size=6)
 
-            # --- CONTEXT SPLIT LOGIC ---
+
             # Identifies where context changes within the same vessel
             context_changed = v_data['context'] != v_data['context'].shift(1)
             v_data['context_group'] = context_changed.cumsum()
@@ -154,7 +177,7 @@ if __name__ == '__main__':
                 elif v_id in vessels_val: target = "val"
                 split_segments[target].extend(segments)
 
-        # 3. Process each split: apply speed filters and save
+        #Process each split: apply speed filters and save
         for split_name, segments in split_segments.items():
             if not segments:
                 print(f" ! No segments generated for {split_name} split in {src.name}")
@@ -170,7 +193,6 @@ if __name__ == '__main__':
                 filtered_df = apply_speed_filters(context_df)
                 
                 if not filtered_df.empty:
-                    # Filename now includes the context_label
                     dst = output_dir / f"{split_name}_{context_label}_{src.name}"
                     filtered_df.to_csv(dst, index=False)
                     n_tracks = filtered_df['track_id'].nunique()

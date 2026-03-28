@@ -77,7 +77,7 @@ def load_ais_data(filepath, dataset_name):
 
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            for line_count, line in enumerate(f, 1):#  f is an iterable file object
+            for line_count, line in enumerate(f, 1):
 
                 # Progress update every 50k lines
                 if line_count % 50000 == 0:
