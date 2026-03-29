@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 
-TEST_LIMIT = None #5  # Limit number of files per dataset for testing, set to inf
+TEST_LIMIT = 5 #None #5  # Limit number of files per dataset for testing, set to inf
 
 def parse_coordinate(coord_str):
     """Parse coordinate string like '54.419327N' or '10.280777E'"""

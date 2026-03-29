@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime
 from multiprocessing import Pool, cpu_count
 
-TEST_LIMIT = None #5  # Limit number of files per dataset for testing, set to None
+TEST_LIMIT = 10 #None #5  # Limit number of files per dataset for testing, set to None
 
 def parse_coordinate(coord_str):
     """Parse coordinate string like '54.419327N' or '10.280777E'"""
