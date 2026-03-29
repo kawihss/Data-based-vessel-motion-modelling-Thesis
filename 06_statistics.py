@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 import glob
 import os
 
+
+#todo: add context distribution per station
+
 # Create output folder if it doesn't exist
 if not os.path.exists("output/06_statistics"):
     os.makedirs("output/06_statistics")
@@ -30,10 +33,9 @@ kiel_pts, brem_pts, wed_pts = 0, 0, 0
 context_pts, prediction_pts = 0, 0
 
 plot_data = []
-cols = ['vessel_id', 'track_id', 'role', 'sog', 'cog', 'rot']
+cols = ['vessel_id', 'track_id', 'context', 'sog', 'cog', 'rot']
 
 for file in glob.glob("output/05_normalized/*.csv"):
-    # Load only necessary columns to keep RAM usage low
     df = pd.read_csv(file, usecols=lambda c: c in cols)
     
     if df.empty:
@@ -77,7 +79,7 @@ df_plot = pd.concat(plot_data, ignore_index=True)
 stations = ['Kiel', 'Bremerhaven', 'Wedel']
 
 # 3 rows (SOG, COG, ROT) by N stations
-fig, axes = plt.subplots(nrows=3, ncols=len(stations), figsize=(18, 12))
+fig, axes = plt.subplots(nrows=4, ncols=len(stations), figsize=(18, 16))
 
 for i, station in enumerate(stations):
     station_data = df_plot[df_plot['station'] == station]
@@ -93,6 +95,12 @@ for i, station in enumerate(stations):
 
     axes[2, i].hist(station_data['rot'].dropna(), bins=40, color='green', alpha=0.6)
     axes[2, i].set_title(f"{station} - ROT (deg/min)")
+
+    context_counts = station_data['context'].value_counts()
+    
+    context_counts.plot(kind='bar', ax=axes[3, i], color='purple', alpha=0.6) # bar chart for context distribution
+    axes[3, i].set_title(f"{station} - Context Distribution")
+    axes[3, i].set_xlabel("Count (Sampled)")
 
 plt.tight_layout()
 plt.savefig("output/06_statistics/simple_histograms.pdf")
