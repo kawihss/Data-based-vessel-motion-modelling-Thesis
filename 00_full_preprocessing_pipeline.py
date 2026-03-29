@@ -5,11 +5,15 @@ Executes preprocessing steps 01 to 05 in sequence, clearing output/ directory fi
 Expects raw AIS data in Data/[Kiel|Bremerhaven|Mississippi]/
 """
 
+#!/usr/bin/env python3
 import sys
 import subprocess
 from pathlib import Path
 
-# Pipeline steps (script name, input, output)
+
+START_AT_STEP = 2   # Choose 1-5
+CLEAR_OUTPUTS = False # Only clears folders for active steps
+
 STEPS = [
     ("01_extract.py", "Data/", "output/01_raw/"),
     ("02_clean.py", "output/01_raw/", "output/02_cleaned/"),
@@ -23,33 +27,33 @@ def run_script(script_name: str):
         print(f"\n{'='*70}")
         print(f"Running {script_name}")
         print(f"{'='*70}")
-        result = subprocess.run([sys.executable, script_name], 
-                              check=True, capture_output=False, text=True)
+        subprocess.run([sys.executable, script_name], check=True)
         print(f"{script_name} completed successfully")
     except subprocess.CalledProcessError as e:
         print(f"{script_name} failed with exit code {e.returncode}")
-        print(f"Error output: {e.stderr}")
         sys.exit(1)
 
 if __name__ == "__main__":
     print("AIS Vessel Trajectory Pipeline")
+    print(f"Resume from Step: {START_AT_STEP} | Clear: {CLEAR_OUTPUTS}")
     print("="*70)
     
-    # Step 0: Clear all output directories (non-recursive, only contents)
-    print("\nClearing output directories...")
     output_base = Path("output")
-    for step_dir in output_base.glob("0*"):  #regex for directories starting with 0 (01_raw, 02_cleaned, etc.)
-        if step_dir.is_dir():
-            for file in step_dir.glob("*"):
-                file.unlink() # delete file
-            print(f"   Cleared {step_dir.name}")
     
-    # Step 1-5: Run pipeline
-    for script_name, _, _ in STEPS:
+    # Step 0: Optional Cleanup
+    if CLEAR_OUTPUTS:
+        print("\nClearing output directories...")
+        for i in range(START_AT_STEP, len(STEPS) + 1):
+            for step_dir in output_base.glob(f"0{i}*"):# directories starting with 01, 02, etc.
+                if step_dir.is_dir():
+                    for file in step_dir.glob("*"):
+                        file.unlink()
+                    print(f"   Cleared {step_dir.name}")
+    
+    for i in range(START_AT_STEP - 1, len(STEPS)):
+        script_name, _, _ = STEPS[i]
         run_script(script_name)
     
     print("\n" + "="*70)
     print("PIPELINE COMPLETE!")
-    print("Final data ready in output/05_normalized/")
-    print("Scalers saved as output/05_normalized/scalers.pkl")
     print("="*70)

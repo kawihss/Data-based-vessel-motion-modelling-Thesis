@@ -102,7 +102,9 @@ def assign_water_context(df: pd.DataFrame, epsg: str, dataset_name: str) -> pd.D
     west = df['lon'].min() - pad
     east = df['lon'].max() + pad
     south = df['lat'].min() - pad
-    north = df['lat'].max() + pad
+    north = df['lat'].max() + pad 
+    #all the redundant chaches could be avoided if we fixed the bounding boxes in the OSM queries to the max of each harbour, 
+    #but for now this is good enough and more robust to outliers in the raw data and only needs to be run once per dataset anyways
 
     osm_gdf = fetch_osm_water_features(west, south, east, north)
     

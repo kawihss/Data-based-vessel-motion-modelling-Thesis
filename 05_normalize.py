@@ -45,7 +45,7 @@ def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False):
         index=df.index
     )
 
-    keep_cols = ['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog', 'rot']
+    keep_cols = ['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog', 'rot', 'context', 'vessel_id']
    
     df_out = pd.concat([df[keep_cols], df_numeric], axis=1)
 
@@ -73,7 +73,7 @@ if __name__ == "__main__":
         all_train_dfs.append(df)
     
     train_combined = pd.concat(all_train_dfs, ignore_index=True)
-    _, scaler = normalize_dataset(train_combined, fit=True, verbose=True)
+    _, scaler = normalize_dataset(train_combined, fit=True)
     
     print(f"Scaler fitted on {len(train_combined):,} train rows")
     
@@ -99,7 +99,7 @@ if __name__ == "__main__":
             if 'window_end_t_utc' in df.columns:
                 df['window_end_t_utc'] = pd.to_datetime(df['window_end_t_utc'])
             
-            df_norm, _ = normalize_dataset(df, scaler=scaler, fit=False, verbose=False)
+            df_norm, _ = normalize_dataset(df, scaler=scaler, fit=False)
             
             dst = output_dir / src.name
             df_norm.to_csv(dst, index=False)
