@@ -150,7 +150,7 @@ if __name__ == '__main__':
         df_resampled = resample_dataset(df, freq_s=freq_s)
 
         df_resampled = calculate_rot(df_resampled, freq_s=freq_s)#unfortunately in sample but we want to use resampeld timestamps
-        #df_resampled = filter_unrealistic_rot(df_resampled, max_rot=90.0)
+        df_resampled = filter_unrealistic_rot(df_resampled, max_rot=90.0)
 
         n_out = len(df_resampled)
 
