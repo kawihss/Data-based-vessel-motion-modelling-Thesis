@@ -45,7 +45,7 @@ def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: i
         # Time Gap Guard: Ensure the window doesn't span a data blackout, see thesis text
         start_t = group.iloc[i - n_ctx]['t_utc']
         end_t = group.iloc[i + n_pred - 1]['t_utc']
-        if (end_t - start_t) > (WINDOW_DUR + PRED_HORIZON) * 1.5:
+        if (end_t - start_t) > (WINDOW_DUR + PRED_HORIZON) * 1.1:  # Allow 10% tolerance for irregular sampling
             continue
 
         # context prediction split
