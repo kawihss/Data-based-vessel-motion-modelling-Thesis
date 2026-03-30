@@ -11,12 +11,14 @@ import joblib
 from sklearn.preprocessing import StandardScaler
 
 NUMERIC_FEATURES = ['dx', 'dy', 'sog', 'cog_sin', 'cog_cos', 'dt', 'rot']
+KEEP_COLS = ['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog', 'rot', 'context', 'vessel_id']
 
 
 def compute_features(df: pd.DataFrame) -> pd.DataFrame:
     """Compute dx/dy displacements and sin/cos COG encoding across all tracks."""
     df = df.copy().sort_values(['track_id', 't_utc'])
 
+    df['dt'] = df.groupby('track_id')['t_utc'].diff().dt.total_seconds().fillna(0) # have to fillna if I want use as input
     df['dx'] = df.groupby('track_id')['x'].diff().fillna(0)
     df['dy'] = df.groupby('track_id')['y'].diff().fillna(0)
 
@@ -45,7 +47,7 @@ def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False):
         index=df.index
     )
 
-    keep_cols = ['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog', 'rot', 'context', 'vessel_id']
+    keep_cols = KEEP_COLS#['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog', 'rot', 'context', 'vessel_id']
    
     df_out = pd.concat([df[keep_cols], df_numeric], axis=1)
 
@@ -67,7 +69,7 @@ if __name__ == "__main__":
     print("Fitting scaler on TRAIN data...")
     all_train_dfs = []
     for train_file in train_files:
-        df = pd.read_csv(train_file, parse_dates=['t_utc'])
+        df = pd.read_csv(train_file, parse_dates=['t_utc'], dtype={'rot': 'float32'}, usecols=KEEP_COLS, date_format='%Y-%m-%d %H:%M:%S', low_memory=False)
         if 'window_end_t_utc' in df.columns:
             df['window_end_t_utc'] = pd.to_datetime(df['window_end_t_utc'])
         all_train_dfs.append(df)
@@ -95,7 +97,8 @@ if __name__ == "__main__":
         print(f"{'='*60}")
         
         for src in files:
-            df = pd.read_csv(src, parse_dates=['t_utc'])
+            df = pd.read_csv(src, parse_dates=['t_utc'], dtype={'rot': 'float32'}, usecols=KEEP_COLS, date_format='%Y-%m-%d %H:%M:%S', low_memory=False)
+
             if 'window_end_t_utc' in df.columns:
                 df['window_end_t_utc'] = pd.to_datetime(df['window_end_t_utc'])
             
