@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 import glob
 import os
 from collections import defaultdict
-
+import matplotlib
+matplotlib.use('Agg') # prevents segfault on VERA
 #chunking because we had some segfaults when trying to read all the data at once
 #uses only a sample for the plots, but counts all the trajectories for the exact numbers in the bar plot 
 
