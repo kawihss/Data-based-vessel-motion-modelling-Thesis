@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import glob
 import os
@@ -125,3 +126,40 @@ for i, station in enumerate(stations):
 plt.tight_layout()
 plt.savefig("output/06_statistics/simple_histograms.pdf")
 print("Saved histograms to output/06_statistics/simple_histograms.pdf", flush=True)
+
+plt.close(fig) 
+
+
+# COG Polar Projection Heatmap
+print("Generating COG polar projections...")
+fig_polar, axes_polar = plt.subplots(1, len(stations), figsize=(18, 6), subplot_kw={'projection': 'polar'})
+
+for i, station in enumerate(stations):
+    station_cog_data = df_plot[df_plot['station'] == station]['cog'].dropna().values
+    
+    if len(station_cog_data) > 0:
+        cog_rad = np.deg2rad(station_cog_data)
+        
+        # Create a polar histogram 
+        n, bins, patches = axes_polar[i].hist(cog_rad, bins=36, alpha=0.8, density=True)
+        
+        axes_polar[i].set_theta_zero_location('N')
+        axes_polar[i].set_theta_direction(-1)
+        
+        #  heatmap coloring based on bin frequency
+        if n.max() > 0:
+            fracs = n / n.max()
+            for frac, patch in zip(fracs, patches):
+                color = plt.cm.YlOrRd(frac) # Yellow-Orange-Red colormap
+                patch.set_facecolor(color)
+                patch.set_edgecolor('black')
+                patch.set_linewidth(0.5)
+            
+    axes_polar[i].set_title(f"{station} - COG Polar Heatmap", pad=20, fontsize=14)
+
+plt.tight_layout()
+polar_output_path = "output/06_statistics/cog_polar_heatmap.pdf"
+plt.savefig(polar_output_path)
+plt.close(fig_polar) # Clean up memory again
+print(f"Saved COG polar heatmap to {polar_output_path}", flush=True)
+print("-" * 50)
