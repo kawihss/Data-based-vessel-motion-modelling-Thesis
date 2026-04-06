@@ -136,12 +136,8 @@ def create_track_summary(df, save_path='output/track_summary.png'):
 
 if __name__ == "__main__":
 
-    # Option 1: Load from CSV
-    csv_file = 'output/04_trajectories/train_channel_processed_ais_kiel_20210701.csv'
-    csv_file = 'output/04_trajectories/train_harbour_processed_ais_kiel_20210701.csv'
-    #csv_file = 'output/04_trajectories/train_lock_processed_ais_kiel_20210701.csv'
+    csv_file = 'output/04_trajectories/train_lock_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-01_12.csv'
 
-   #csv_file = 'output/04_trajectories/train_processed_ais_marinecadastre_2024_01.csv'
 
     if Path(csv_file).exists():
         df = load_data(csv_file)

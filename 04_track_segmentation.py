@@ -12,21 +12,17 @@ from datetime import timedelta
 # --- CONFIGURATION ---
 WINDOW_DUR = timedelta(minutes=5)
 PRED_HORIZON = timedelta(minutes=5)
-STRIDE_DUR = timedelta(minutes=1)  # how much to slide the window for the next sample, smaller means more samples but more overlap. Adjust to get -150-200k Samples per domain
+STRIDE_DUR_DEFAULT = timedelta(minutes=1)  
+STRIDE_DUR_LOCK = timedelta(seconds=10)    # smaller for locks
 MIN_SOG = 0.5 
 LOW_SPEED_THRESH = 1.0 
 LOW_SPEED_FRAC_MAX = 0.5
+AUGMENT: bool = True  # Global toggle for data augmentation
 
 def infer_freq_from_name(name: str) -> int:
-    #"""Infer sampling frequency from filename."""
-    #lower = name.lower()
-    #if 'kiel' in lower or 'bremerhaven' in lower or 'wedel' in lower:
-     #   return 30
-    #elif 'marinecadastre' in lower or 'mississippi' in lower:
-    #   return 60
     return 30
 
-def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: int):
+def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: int, stride_s: int):
     """
     Slices the vessel trajectory into context/prediction pairs using a stride.
     """
@@ -35,7 +31,7 @@ def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: i
     # Calculate how many rows represent our durations
     n_ctx = int(WINDOW_DUR.total_seconds() / freq_s)
     n_pred = int(PRED_HORIZON.total_seconds() / freq_s)
-    n_stride = max(1, int(STRIDE_DUR.total_seconds() / freq_s))
+    n_stride = max(1, int(stride_s / freq_s)) 
     
     segments = []
     current_id = start_track_id
@@ -111,6 +107,66 @@ def smooth_context_labels(context_series, window_size=6):
     # Map back to original string labels
     return smoothed_numeric.map(int_to_label)
 
+def augment_rotate(df: pd.DataFrame, angle_deg: float, new_track_id_start: int) -> pd.DataFrame:
+    df_aug = df.copy()
+        
+    theta = np.radians(angle_deg)
+    c, s = np.cos(theta), np.sin(theta)
+    
+    x = df_aug['x']
+    y = df_aug['y']
+    
+    # turn around center of current trajectory
+    cx = x.mean()
+    cy = y.mean()
+    
+    # 1. Shift to origin (x - cx, y - cy)
+    # 2. Rotate (* c, * s)
+    # 3. Shift back to original centroid (+ cx, + cy)
+    df_aug['x'] = (x - cx) * c - (y - cy) * s + cx
+    df_aug['y'] = (x - cx) * s + (y - cy) * c + cy
+    
+    # Adjust angles (COG and Heading) by adding the rotation angle modulo 360
+    if 'cog' in df_aug.columns:
+        df_aug['cog'] = (df_aug['cog'] + angle_deg) % 360
+    if 'heading' in df_aug.columns:
+        df_aug['heading'] = (df_aug['heading'] + angle_deg) % 360
+    if 'true_heading' in df_aug.columns: # optional feature
+        df_aug['true_heading'] = (df_aug['true_heading'] + angle_deg) % 360   
+
+
+    # Re-assign track IDs to ensure global uniqueness
+    unique_ids = df_aug['track_id'].unique()
+    track_mapping = {old_id: new_id for old_id, new_id in zip(unique_ids, range(new_track_id_start, new_track_id_start + len(unique_ids)))}
+    df_aug['track_id'] = df_aug['track_id'].map(track_mapping)
+    
+    return df_aug
+
+def augment_mirror(df: pd.DataFrame, new_track_id_start: int) -> pd.DataFrame:
+    df_aug = df.copy()
+    
+    cx = df_aug['x'].mean()
+    
+    # Mirror across the local North-South axis (Y-axis) at the centroid
+    df_aug['x'] = cx - (df_aug['x'] - cx)
+    
+    # Adjust angles 
+    df_aug['cog'] = (360 - df_aug['cog']) % 360
+    df_aug['heading'] = (360 - df_aug['heading']) % 360
+
+    # Mirroring reverses the turn direction (Right turn becomes Left turn)
+    # note rn rot is nan and calculated later, but this is a safeguard for any future changes
+    if 'rot' in df_aug.columns:
+        df_aug['rot'] = -df_aug['rot']
+
+
+    # Re-assign track IDs to ensure global uniqueness
+    unique_ids = df_aug['track_id'].unique()
+    track_mapping = {old_id: new_id for old_id, new_id in zip(unique_ids, range(new_track_id_start, new_track_id_start + len(unique_ids)))}
+    df_aug['track_id'] = df_aug['track_id'].map(track_mapping)
+    
+    return df_aug
+
 if __name__ == '__main__':
     input_dir = Path('output/03_sampled')
     output_dir = Path('output/04_trajectories')
@@ -149,14 +205,7 @@ if __name__ == '__main__':
         for v_id, v_data in vessel_groups:
             v_data = v_data.sort_values('t_utc')
             
-            # Label stability fix (2-min rolling mode)
-            # Note: Complex mapping required because pandas lacks a native rolling string mode.
-            c_map = {c: i for i, c in enumerate(v_data['context'].unique())}
-            #v_data['context'] = v_data['context'].map(c_map).rolling(6, min_periods=1).apply(
-            #    lambda x: pd.Series(x).mode()[0]).map({i: c for c, i in c_map.items()})
-            # Label stability fix (rolling mode to smooth GNSS jitter)
             v_data['context'] = smooth_context_labels(v_data['context'], window_size=6)
-
 
             # Identifies where context changes within the same vessel
             context_changed = v_data['context'] != v_data['context'].shift(1)
@@ -167,11 +216,16 @@ if __name__ == '__main__':
                     total_short_cuts += 1
                     continue
                 
+                current_context = sub_data['context'].iloc[0]
+                if current_context == 'lock':
+                    current_stride_s = int(STRIDE_DUR_LOCK.total_seconds())
+                else:
+                    current_stride_s = int(STRIDE_DUR_DEFAULT.total_seconds())
+                
                 segments, global_track_counter = create_samples_efficient(
-                    sub_data, freq_s, global_track_counter
+                    sub_data, freq_s, global_track_counter, current_stride_s
                 )
                 
-                # Assign to splits
                 target = "test"
                 if v_id in vessels_train: target = "train"
                 elif v_id in vessels_val: target = "val"
@@ -192,6 +246,26 @@ if __name__ == '__main__':
                 print(f"Processing {split_name} split - Context: {context_label}")
                 filtered_df = apply_speed_filters(context_df)
                 
+                if AUGMENT and split_name == 'train' and context_label == 'lock' and not filtered_df.empty:
+                    print(f" Augmenting {context_label} data in train split...")
+                    
+                    augmented_dfs = [filtered_df]
+                    
+                    random_angles = np.random.uniform(0, 360, size=16)
+                    
+                    for angle in random_angles:
+                        # 1. Rotate
+                        rotated_df = augment_rotate(filtered_df, angle_deg=angle, new_track_id_start=global_track_counter)
+                        global_track_counter += rotated_df['track_id'].nunique()
+                        augmented_dfs.append(rotated_df)
+                        
+                        # 2. mirror the rotated dataset
+                        mirrored_df = augment_mirror(rotated_df, new_track_id_start=global_track_counter)
+                        global_track_counter += mirrored_df['track_id'].nunique()
+                        augmented_dfs.append(mirrored_df)
+                    
+                    filtered_df = pd.concat(augmented_dfs, ignore_index=True)
+
                 if not filtered_df.empty:
                     dst = output_dir / f"{split_name}_{context_label}_{src.name}"
                     filtered_df.to_csv(dst, index=False)
