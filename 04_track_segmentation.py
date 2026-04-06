@@ -200,8 +200,8 @@ if __name__ == '__main__':
         scaler = StandardScaler()
         scaled_features = scaler.fit_transform(vessel_profiles[['sog', 'rot', 'context_idx']])
         
-        # Cluster vessels into 8 Strata based on (SOG, ROT, Context)
-        n_clusters = min(8, len(vessel_profiles))
+        # Cluster vessels into 5 Strata based on (SOG, ROT, Context)
+        n_clusters = min(5, len(vessel_profiles))
         km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         vessel_profiles['stratum'] = km.fit_predict(scaled_features)
 
