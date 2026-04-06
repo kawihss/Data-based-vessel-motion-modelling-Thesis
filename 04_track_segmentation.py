@@ -6,7 +6,9 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import timedelta
-
+from sklearn.cluster import KMeans
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 # To avoid data leakage, we split unique 'vessel_ids'. See thesis text
 
 # --- CONFIGURATION ---
@@ -183,19 +185,44 @@ if __name__ == '__main__':
         print(f"{'='*60}")
         df = pd.read_csv(src, parse_dates=['t_utc'])
         freq_s = infer_freq_from_name(src.name)
+
+        # strafication:
+        vessel_profiles = df.groupby('vessel_id').agg({
+            'sog': 'mean', # use mean SOG
+            'rot': lambda x: x.abs().max(), # use max rot
+            'context': lambda x: x.mode()[0] # use most frequent context
+        }).reset_index()
+
+        # Convert context strings to numbers for the algorithm
+        vessel_profiles['context_idx'] = vessel_profiles['context'].astype('category').cat.codes
+
+        # Scale features: KMeans needs this so ROT (0-90) doesn't dominate SOG (0-15)
+        scaler = StandardScaler()
+        scaled_features = scaler.fit_transform(vessel_profiles[['sog', 'rot', 'context_idx']])
         
-        #Split vessels into train/val/test
-        np.random.seed(42)
-        all_vessels = df['vessel_id'].unique()
-        np.random.shuffle(all_vessels)
+        # Cluster vessels into 8 Strata based on (SOG, ROT, Context)
+        n_clusters = min(8, len(vessel_profiles))
+        km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        vessel_profiles['stratum'] = km.fit_predict(scaled_features)
+
+        print(f"Stratification Summary for {src.name} ---")
+        cluster_counts = vessel_profiles['stratum'].value_counts().sort_index()
+        for cluster_id, count in cluster_counts.items():
+            print(f"  Cluster {cluster_id}: {count} vessels")
+
+        # 70/15/15 Stratified Split
+        v_train, v_temp = train_test_split(vessel_profiles['vessel_id'], test_size=0.30, 
+                                           stratify=vessel_profiles['stratum'], random_state=42)
         
-        n_vessels = len(all_vessels)
-        split_train = int(0.70 * n_vessels)
-        split_val   = int(0.85 * n_vessels)
-        
-        vessels_train = set(all_vessels[:split_train])
-        vessels_val   = set(all_vessels[split_train:split_val])
-        
+        temp_profiles = vessel_profiles[vessel_profiles['vessel_id'].isin(v_temp)]
+        v_val, v_test = train_test_split(temp_profiles['vessel_id'], test_size=0.50, 
+                                         stratify=temp_profiles['stratum'], random_state=42)
+
+        vessels_train, vessels_val = set(v_train), set(v_val)
+        #print(f"Split Distribution:")
+        #print(f"  Train: {len(vessels_train)} vessels")
+        #print(f"  Val:   {len(vessels_val)} vessels")
+        #print(f"  Test:  {len(v_test)} vessels")
         split_segments = {"train": [], "val": [], "test": []}
         
         #Generate Segments: Split by vessel AND context change
