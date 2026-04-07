@@ -220,6 +220,10 @@ if __name__ == '__main__':
         for cluster_id, count in cluster_counts.items():
             print(f"  Cluster {cluster_id}: {count} vessels")
 
+        small_clusters = cluster_counts[cluster_counts < 3].index # avoid issue with wedel dataset where some clusters have only 1 vessel, which causes errors in stratified splitting.
+        if not small_clusters.empty:
+            largest_cluster = cluster_counts.idxmax()
+            vessel_profiles.loc[vessel_profiles['stratum'].isin(small_clusters), 'stratum'] = largest_cluster
         # 70/15/15 Stratified Split
         v_train, v_temp = train_test_split(vessel_profiles['vessel_id'], test_size=0.30, 
                                            stratify=vessel_profiles['stratum'], random_state=42)
