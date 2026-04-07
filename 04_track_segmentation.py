@@ -186,6 +186,16 @@ if __name__ == '__main__':
         df = pd.read_csv(src, parse_dates=['t_utc'])
         freq_s = infer_freq_from_name(src.name)
 
+        # remove this small block, redundant, 
+        #only necessary for before rerunning 01_extract on old test files that have NaNs in sog and cog. 
+        #now  01_extract already removes these rows.
+        n_before = len(df)
+        df = df.dropna(subset=['sog', 'rot', 'context']).reset_index(drop=True)
+        if df.empty:
+            continue
+        #until here #####                
+
+
         # strafication:
         vessel_profiles = df.groupby('vessel_id').agg({
             'sog': 'mean', # use mean SOG

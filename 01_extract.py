@@ -171,7 +171,7 @@ def load_ais_data(filepath, dataset_name):
 
     # Remove records with invalid timestamps or coordinates
     initial_len = len(df)
-    df = df.dropna(subset=['t_utc', 'lat', 'lon'])
+    df = df.dropna(subset=['t_utc', 'lat', 'lon', 'sog', 'cog'])# add sog and cog after crash in 04. dont include optional heading
     if len(df) < initial_len:
         print(f"  Removed {initial_len - len(df)} records with invalid data")
 
