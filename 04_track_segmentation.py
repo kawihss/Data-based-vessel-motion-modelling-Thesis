@@ -2,6 +2,8 @@
 # Input:  output/03_sampled/*.csv
 # Output: output/04_trajectories/*.csv
 
+#On full dataset: Final Report: 86476 segments were too short after context-splitting and were discarded.
+
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -41,8 +43,10 @@ def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: i
     # Slide the window using the stride
     for i in range(n_ctx, len(group) - n_pred, n_stride):
         # Time Gap Guard: Ensure the window doesn't span a data blackout, see thesis text
-        start_t = group.iloc[i - n_ctx]['t_utc']
-        end_t = group.iloc[i + n_pred - 1]['t_utc']
+        #start_t = group.iloc[i - n_ctx]['t_utc']
+        #end_t = group.iloc[i + n_pred - 1]['t_utc']
+        start_t = group['t_utc'].iat[i - n_ctx] # direkt access is faster than iloc for single values
+        end_t = group['t_utc'].iat[i + n_pred - 1]
         if (end_t - start_t) > (WINDOW_DUR + PRED_HORIZON) * 1.1:  # Allow 10% tolerance for irregular sampling
             continue
 
@@ -91,22 +95,24 @@ def apply_speed_filters(df: pd.DataFrame) -> pd.DataFrame:
 def smooth_context_labels(context_series, window_size=6):
     """
     Applies a rolling majority vote to string labels to remove GNSS jitter.
-    Pandas rolling() requires numeric data, so we temporarily map strings to integers.
+    Optimized with raw=True and numpy for massive speedup.
     """
-    #Create mapping dictionaries
     unique_labels = context_series.unique()
     label_to_int = {label: i for i, label in enumerate(unique_labels)}
     int_to_label = {i: label for label, i in label_to_int.items()}
     
-    # Map string labels to integers for rolling operation
     numeric_series = context_series.map(label_to_int)
     
-    # Apply rolling window to find the most common integer (mode)
+    # Pure numpy mode calculation
+    def get_mode(x):
+        values, 1 = np.unique(x, return_counts=True)
+        return values[np.argmax(counts)]
+    
+    # raw=True passes raw numpy arrays instead of Pandas objects, should be faster
     smoothed_numeric = numeric_series.rolling(window=window_size, min_periods=1).apply(
-        lambda x: pd.Series(x).mode()[0]
+        get_mode, raw=True
     )
     
-    # Map back to original string labels
     return smoothed_numeric.map(int_to_label)
 
 def augment_rotate(df: pd.DataFrame, angle_deg: float, new_track_id_start: int) -> pd.DataFrame:
@@ -220,10 +226,11 @@ if __name__ == '__main__':
         for cluster_id, count in cluster_counts.items():
             print(f"  Cluster {cluster_id}: {count} vessels")
 
-        small_clusters = cluster_counts[cluster_counts < 3].index # avoid issue with wedel dataset where some clusters have only 1 vessel, which causes errors in stratified splitting.
+        small_clusters = cluster_counts[cluster_counts < 6].index # avoid issue with wedel dataset where some clusters have only 1 vessel, which causes errors in stratified splitting.
         if not small_clusters.empty:
             largest_cluster = cluster_counts.idxmax()
             vessel_profiles.loc[vessel_profiles['stratum'].isin(small_clusters), 'stratum'] = largest_cluster
+
         # 70/15/15 Stratified Split
         v_train, v_temp = train_test_split(vessel_profiles['vessel_id'], test_size=0.30, 
                                            stratify=vessel_profiles['stratum'], random_state=42)

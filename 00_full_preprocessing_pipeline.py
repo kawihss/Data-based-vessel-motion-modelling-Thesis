@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 
-START_AT_STEP = 3   # Choose 1-5
+START_AT_STEP = 1   # Choose 1-5
 CLEAR_OUTPUTS = True # False # Only clears folders for active steps
 
 STEPS = [

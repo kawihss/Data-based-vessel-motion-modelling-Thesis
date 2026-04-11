@@ -98,13 +98,26 @@ def fetch_osm_water_features(west, south, east, north) -> gpd.GeoDataFrame:
 
 def assign_water_context(df: pd.DataFrame, epsg: str, dataset_name: str) -> pd.DataFrame:
     # 1. bounding box from actual ship coordinates with a buffer of ~5km (0.05 degrees) to ensure ships near the edge can still find water features
-    pad = 0.05
-    west = df['lon'].min() - pad
-    east = df['lon'].max() + pad
-    south = df['lat'].min() - pad
-    north = df['lat'].max() + pad 
-    #all the redundant chaches could be avoided if we fixed the bounding boxes in the OSM queries to the max of each harbour, 
-    #but for now this is good enough and more robust to outliers in the raw data and only needs to be run once per dataset anyways
+
+
+# 1. Static boxes are very big, but cover all files after filter -> cheaper than downloading smaller boxes for each file
+    if 'bremerhaven' in dataset_name:
+        south, north = 53.40, 54.00
+        west, east = 8.00, 8.80
+    elif 'kiel' in dataset_name:
+        south, north = 53.50, 54.50
+        west, east = 9.20, 11.50
+    elif 'wedel' in dataset_name:
+        south, north = 53.00, 54.00
+        west, east = 9.00, 10.50
+    else:
+        # Fallback uses outer bound of file. this is slower because we fetch from osmnx every file
+        pad = 0.05
+        south = df['lat'].min() - pad
+        north = df['lat'].max() + pad
+        west = df['lon'].min() - pad
+        east = df['lon'].max() + pad
+
 
     osm_gdf = fetch_osm_water_features(west, south, east, north)
     
@@ -180,8 +193,7 @@ def remove_position_jumps(df: pd.DataFrame, threshold=2.0) -> pd.DataFrame:
     """Delete rows where displacement exceeds threshold × speed-implied distance."""
     df = df.copy().sort_values('t_utc').reset_index(drop=True)
 
-    t = df['t_utc'].astype(np.int64) / 1e9          # in seconds
-    dt = np.diff(t, prepend=np.nan)
+    dt = df['t_utc'].diff().dt.total_seconds().values # (works on all Pandas versions). timestam unit changes between pandas versions!!
     dx = np.diff(df['x'].values, prepend=np.nan)
     dy = np.diff(df['y'].values, prepend=np.nan)
     actual_dist = np.sqrt(dx**2 + dy**2)             # metres
@@ -196,7 +208,6 @@ def remove_position_jumps(df: pd.DataFrame, threshold=2.0) -> pd.DataFrame:
 
     return df[~is_jump].reset_index(drop=True)
 
-
 def remove_fast_vessels(df: pd.DataFrame, max_sog=30) -> pd.DataFrame:
     """Remove all rows belonging to vessels that ever exceed max_sog knots."""
     fast_ids = df.groupby('vessel_id')['sog'].max()
@@ -206,7 +217,7 @@ def remove_fast_vessels(df: pd.DataFrame, max_sog=30) -> pd.DataFrame:
             f"({fast_ids.nunique()} vessels exceeding {max_sog} kn)")
     return df[~mask].reset_index(drop=True)
 
-# ── Main clean function ───────────────────────────────────────────────────────
+
 def clean(df: pd.DataFrame) -> pd.DataFrame:
     n0 = len(df)
 
@@ -264,7 +275,10 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
 
     #Remove position jumps per vessel and filter out vessels that exceed speed threshold 
     n_before_jumps = len(df)
-    df = df.groupby('vessel_id', group_keys=False).apply(remove_position_jumps)
+    #df = df.groupby('vessel_id', group_keys=False).apply(remove_position_jumps)
+    #df = df.groupby('vessel_id').apply(remove_position_jumps).reset_index(level=0).reset_index(drop=True)
+    #df = df.groupby('vessel_id', group_keys=False).apply(remove_position_jumps, include_groups=False)
+    df = pd.concat([remove_position_jumps(group) for _, group in df.groupby('vessel_id')]).reset_index(drop=True) # because pandas just causes trouble
     print(f"  Jump filter removed: {n_before_jumps - len(df):,}")
 
     df = remove_fast_vessels(df, max_sog=30)

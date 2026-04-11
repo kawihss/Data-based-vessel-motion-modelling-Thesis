@@ -55,9 +55,7 @@ def filter_unrealistic_rot(df: pd.DataFrame, max_rot=90.0) -> pd.DataFrame:
     mask = (df['rot'].abs() <= max_rot) | (df['rot'].isna()) 
     
     dropped = len(df) - mask.sum()
-    if dropped > 0:
-        print(f"    ROT-Filter: {dropped} unrealistische Datenpunkte (> {max_rot}°/min) entfernt.")
-        
+    
     return df[mask].reset_index(drop=True)
 
 
@@ -162,6 +160,6 @@ if __name__ == '__main__':
         total_out += n_out
 
     print(f"\n{'='*60}")
-    print(f'DONE  raw rows: {total_in:,}  →  resampled rows: {total_out:,}')
+    print(f'DONE  raw rows: {total_in:,}  →  resampled rows: {total_out:,}')# DONE  raw rows: 148,576,562  →  resampled rows: 45,679,532
     print(f"Output dir: {output_dir}")
     print(f"{'='*60}")

@@ -9,6 +9,29 @@ matplotlib.use('Agg') # prevents segfault on VERA
 #chunking because we had some segfaults when trying to read all the data at once
 #uses only a sample for the plots, but counts all the trajectories for the exact numbers in the bar plot 
 
+
+#Counting raw AIS messages...
+#Total raw messages: 154269746
+#--------------------------------------------------
+#Processing final trajectories...
+#Kiel        | Vessels: 41201 | Tracks: 3266235 
+#Bremerhaven | Vessels: 27526 | Tracks: 2162097 
+#Wedel       | Vessels: 14390 | Tracks: 1385134
+#--------------------------------------------------
+#Distinct Trajectories per Context:
+#--- Kiel ---
+#harbour    2725942
+#channel     476853
+#lock         62404
+#river         1036
+#--- Bremerhaven ---
+#harbour    2028134
+#river        77747
+#lock         56199
+#channel         17
+#--- Wedel ---
+#river    1385134
+
 # Create output folder if it doesn't exist
 os.makedirs("output/06_statistics", exist_ok=True)
 
@@ -67,8 +90,8 @@ for file in glob.glob("output/05_normalized/*.csv"):
         for ctx, unique_tracks in df.groupby('context')['track_id'].unique().items():
             true_contexts[station_name][ctx].update(unique_tracks)
 
-        # Grab a random 5% (0.05) of EVERY chunk
-        df_sample = df.sample(frac=0.05, random_state=42).copy()
+        # Grab a random sample for the plots, rn set to 100%
+        df_sample = df.sample(frac=1, random_state=42).copy()
         df_sample['station'] = station_name
         plot_data.append(df_sample)
 
@@ -132,7 +155,7 @@ plt.close(fig)
 
 # COG Polar Projection Heatmap
 print("Generating COG polar projections...")
-fig_polar, axes_polar = plt.subplots(1, len(stations), figsize=(18, 6), subplot_kw={'projection': 'polar'})
+fig_polar, axes_polar = plt.subplots(1, len(stations), figsize=(18, 6), subplot_kw={'projection': 'polar'}, constrained_layout=True)
 
 for i, station in enumerate(stations):
     station_cog_data = df_plot[df_plot['station'] == station]['cog'].dropna().values
@@ -159,7 +182,7 @@ for i, station in enumerate(stations):
 
 plt.tight_layout()
 polar_output_path = "output/06_statistics/cog_polar_heatmap.pdf"
-plt.savefig(polar_output_path)
+plt.savefig(polar_output_path, bbox_inches='tight')
 plt.close(fig_polar) # Clean up memory again
 print(f"Saved COG polar heatmap to {polar_output_path}", flush=True)
 print("-" * 50)

@@ -4,6 +4,8 @@
 # Input:  output/04_trajectories/*.csv 
 # Output: output/05_normalized/*.csv + scalers.pkl
 
+# full dataset: NORMALIZED 14,322,040 rows (716,102 tracks)
+
 import pandas as pd
 import numpy as np
 from pathlib import Path

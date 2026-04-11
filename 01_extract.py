@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 
-TEST_LIMIT = None #5  # Limit number of files per dataset for testing. None = process all files. 
+TEST_LIMIT =  None #5  # Limit number of files per dataset for testing. None = process all files. 
 #This should be a yaml because I test on my laptop and do full runs on VERA
 # 04 läuft, morgen dann 567      
 def parse_coordinate(coord_str):
@@ -74,7 +74,7 @@ def load_ais_data(filepath, dataset_name):
 
     print(f"\n{'='*60}")
     print(f"Loading {dataset_name.upper()} dataset")
-    print(f"{'='*60}")
+    #print(f"{'='*60}")
     print(f"File: {filepath}")
 
     try:
@@ -129,7 +129,8 @@ def load_ais_data(filepath, dataset_name):
 
                     record = {
                         'dataset': dataset_name,
-                        't_utc': parse_timestamp(fields[9]),
+                        #'t_utc': parse_timestamp(fields[9]),
+                        't_utc': fields[9].strip(), 
                         'vessel_id': int(mmsi_str),
                         'lat': parse_coordinate(fields[4]),
                         'lon': parse_coordinate(fields[5]),
@@ -168,6 +169,8 @@ def load_ais_data(filepath, dataset_name):
     if df.empty:
         print("WARNING: No valid position reports found!")
         return df
+    
+    df['t_utc'] = pd.to_datetime(df['t_utc'], format='%y%m%d %H%M%S', errors='coerce') # converte all at once
 
     # Remove records with invalid timestamps or coordinates
     initial_len = len(df)

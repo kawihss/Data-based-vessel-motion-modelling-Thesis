@@ -2,6 +2,7 @@
 # Input:  URLs
 # Output: Data/Kiel/, Data/Bremerhaven/, Data/Wedel/
 
+# simply rerun download if it fails for a file. You might want to increase the time.sleep 
 import os
 import time
 import requests
@@ -58,7 +59,7 @@ def download_dataset(feed_url, output_dir):
                 os.remove(filepath)
                 
         # Wait a bit between downloads to not overload the server
-        time.sleep(0.5)
+        time.sleep(0.05)
 
 if __name__ == "__main__":
     
