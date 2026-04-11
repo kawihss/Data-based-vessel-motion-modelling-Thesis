@@ -1,4 +1,4 @@
-# 04_track_segmentation.py: Slicing trajectories into samples based on time and context
+# Slicing trajectories into samples 
 # Input:  output/03_sampled/*.csv
 # Output: output/04_trajectories/*.csv
 
@@ -13,7 +13,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 # To avoid data leakage, we split unique 'vessel_ids'. See thesis text
 
-# --- CONFIGURATION ---
 WINDOW_DUR = timedelta(minutes=5)
 PRED_HORIZON = timedelta(minutes=5)
 STRIDE_DUR_DEFAULT = timedelta(minutes=1)  
@@ -21,18 +20,15 @@ STRIDE_DUR_LOCK = timedelta(seconds=10)    # smaller for locks
 MIN_SOG = 0.5 
 LOW_SPEED_THRESH = 1.0 
 LOW_SPEED_FRAC_MAX = 0.5
-AUGMENT: bool = True  # Global toggle for data augmentation
+AUGMENT: bool = True  # toggle for data augmentation
+GERMAN_FREQ_S = 30
 
-def infer_freq_from_name(name: str) -> int:
-    return 30
+
 
 def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: int, stride_s: int):
-    """
-    Slices the vessel trajectory into context/prediction pairs using a stride.
-    """
+    #Slices vessel trajectory into context/prediction using stride
     group = group.sort_values('t_utc').reset_index(drop=True)
     
-    # Calculate how many rows represent our durations
     n_ctx = int(WINDOW_DUR.total_seconds() / freq_s)
     n_pred = int(PRED_HORIZON.total_seconds() / freq_s)
     n_stride = max(1, int(stride_s / freq_s)) 
@@ -40,24 +36,22 @@ def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: i
     segments = []
     current_id = start_track_id
     
-    # Slide the window using the stride
     for i in range(n_ctx, len(group) - n_pred, n_stride):
         # Time Gap Guard: Ensure the window doesn't span a data blackout, see thesis text
         #start_t = group.iloc[i - n_ctx]['t_utc']
         #end_t = group.iloc[i + n_pred - 1]['t_utc']
         start_t = group['t_utc'].iat[i - n_ctx] # direkt access is faster than iloc for single values
         end_t = group['t_utc'].iat[i + n_pred - 1]
-        if (end_t - start_t) > (WINDOW_DUR + PRED_HORIZON) * 1.1:  # Allow 10% tolerance for irregular sampling
+        if (end_t - start_t) > (WINDOW_DUR + PRED_HORIZON) * 1.1:  # Allow 10% tolerance for irregular sampling. 
+            #Being stricter here will make assumpotions in the model about regular sampling more valid, but will throw out more segments. Adjust as needed.
             continue
 
-        # context prediction split
         ctx = group.iloc[i - n_ctx : i].copy()
         pred = group.iloc[i : i + n_pred].copy()
         
         ctx['role'] = 'context'
         pred['role'] = 'prediction'
         
-        # Combine and assign unique ID
         combined = pd.concat([ctx, pred])
         combined['track_id'] = current_id
         
@@ -67,7 +61,7 @@ def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: i
     return segments, current_id
 
 def apply_speed_filters(df: pd.DataFrame) -> pd.DataFrame:
-    """Vectorized filtering of segments based on speed criteria."""
+    #Vectorized filtering of segments based on speed criteria
     if df.empty:
         return df
     
@@ -82,22 +76,21 @@ def apply_speed_filters(df: pd.DataFrame) -> pd.DataFrame:
     
     # Filter IDs based on criteria:
     # 1. Max SOG must be >= 1.0 (removes anchored ships)
-    # 2. Less than LOW_SPEED_FRAC_MAX of points can be < 2.0 knots
+    # 2. Less than LOW_SPEED_FRAC_MAX of points can be < 2.0 knots (MIN_SOG)
     valid_mask = (stats['max_sog'] >= MIN_SOG) & (stats['low_speed_frac'] <= LOW_SPEED_FRAC_MAX)
     valid_ids = stats.index[valid_mask]
 
     removed_anchoring = (stats['max_sog'] < MIN_SOG).sum()
     removed_lowspeed = (stats['low_speed_frac'] > LOW_SPEED_FRAC_MAX).sum()
-    print(f"Speed filter: {len(stats)} total, removed anchoring: {removed_anchoring}, low-speed: {removed_lowspeed}, kept: {len(valid_ids)}")
+    #print(f"Speed filter: {len(stats)} total, removed anchoring: {removed_anchoring}, low-speed: {removed_lowspeed}, kept: {len(valid_ids)}")
 
     return df[df['track_id'].isin(valid_ids)].copy()
 
 def smooth_context_labels(context_series, window_size=6):
-    """
-    Applies a rolling majority vote to string labels to remove GNSS jitter.
-    Optimized with raw=True and numpy for massive speedup.
-    """
-    unique_labels = context_series.unique()
+    
+    #Applies rolling majority vote to labels to remove GNSS jitter
+    
+    unique_labels = context_series.unique() # 'river': 0, 'harbour': 1, 'lock': 2
     label_to_int = {label: i for i, label in enumerate(unique_labels)}
     int_to_label = {i: label for label, i in label_to_int.items()}
     
@@ -105,14 +98,13 @@ def smooth_context_labels(context_series, window_size=6):
     
     # Pure numpy mode calculation
     def get_mode(x):
-        values, 1 = np.unique(x, return_counts=True)
+        values, counts = np.unique(x, return_counts=True) 
         return values[np.argmax(counts)]
     
     # raw=True passes raw numpy arrays instead of Pandas objects, should be faster
     smoothed_numeric = numeric_series.rolling(window=window_size, min_periods=1).apply(
         get_mode, raw=True
     )
-    
     return smoothed_numeric.map(int_to_label)
 
 def augment_rotate(df: pd.DataFrame, angle_deg: float, new_track_id_start: int) -> pd.DataFrame:
@@ -190,7 +182,7 @@ if __name__ == '__main__':
         print(f"Processing: {src.name}")
         print(f"{'='*60}")
         df = pd.read_csv(src, parse_dates=['t_utc'])
-        freq_s = infer_freq_from_name(src.name)
+        freq_s = GERMAN_FREQ_S
 
         # remove this small block, redundant, 
         #only necessary for before rerunning 01_extract on old test files that have NaNs in sog and cog. 
