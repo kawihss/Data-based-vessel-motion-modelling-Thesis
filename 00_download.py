@@ -1,8 +1,8 @@
-# 00_download.py: Downloading AIS data from BSH for Kiel, Bremerhaven, and Wedel
-# Input:  URLs
+# Downloading AIS data from BSH for Kiel, Bremerhaven, and Wedel
+# Input:  hardcoded URLs
 # Output: Data/Kiel/, Data/Bremerhaven/, Data/Wedel/
 
-# simply rerun download if it fails for a file. You might want to increase the time.sleep 
+# simply rerun download if it fails for a file. If you get many fails, you might want to increase the time.sleep 
 import os
 import time
 import requests
@@ -19,7 +19,7 @@ def download_dataset(feed_url, output_dir):
     # Parse XML
     root = ET.fromstring(response.content)
     
-    # Find all links in the XML that contain '.log' (the actual data files)
+    # Find all links in the XML that contain '.log' 
     links = []
     for elem in root.iter():
         if 'href' in elem.attrib:
@@ -30,14 +30,12 @@ def download_dataset(feed_url, output_dir):
     # Remove duplicates
     links = list(set(links))
     links = sorted(links)
-    print(f"{len(links)} files to download.\n")
     
     # Download each file, skip if already exists
     for i, link in enumerate(links):
         filename = link.split('/')[-1]
         filepath = os.path.join(output_dir, filename)
         
-        # Skip if file exists AND is not empty
         if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
             print(f"  [{i+1}/{len(links)}] skipping {filename} (already exists)")
             continue
@@ -58,7 +56,7 @@ def download_dataset(feed_url, output_dir):
             if os.path.exists(filepath):
                 os.remove(filepath)
                 
-        # Wait a bit between downloads to not overload the server
+        # Wait a bit between downloads to not overload the server. Adjust if you get many errors
         time.sleep(0.05)
 
 if __name__ == "__main__":

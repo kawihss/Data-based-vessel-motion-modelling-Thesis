@@ -40,9 +40,9 @@ output/
 
 | Step | Script | Description |
 |------|--------|-------------|
-| 1 | `01_extract.py` | Parse raw AIS files → unified CSV (position types 1,2,3,18,27 only) |
+| 1 | `01_extract.py` | Parse raw AIS files to unified CSV (position types 1,2,3,18,27 only) |
 | 2 | `02_clean.py` | Geo-filter, MMSI hashing, dedup, UTM projection, kinematic outlier removal |
-| 3 | `03_sample.py` | Resample to uniform grid (10 s German / 60 s NOAA) via spline + linear interp |
+| 3 | `03_sample.py` | Resample to uniform 30s grid via spline + linear interpolation |
 | 4 | `04_track_segmentation.py` | Sliding window (10 min ctx + 2 min pred), speed filters, vessel-level split |
 | 5 | `05_normalize.py` | Compute dx/dy, COG sin/cos, Δt; fit StandardScaler on train only |
 
@@ -53,16 +53,14 @@ output/
 ### 1. Install dependencies
 
 ```bash
-pip install pandas numpy pyproj scikit-learn joblib
+pip install -r requirements.txt
 ```
 
 
-### 2. Place raw data
+### 2. Download raw data
 
 ```
-Data/Kiel/ship_emissions_Kiel_AIS_shipdata_YYYYMMDD.log.txt
-Data/Bremerhaven/ship_emissions_Bremerhaven_AIS_shipdata_YYYYMMDD.log.txt
-Data/Mississippi/AIS_YYYY_MM_DD.csv
+python 00_download.py
 ```
 
 
@@ -117,8 +115,7 @@ Key parameters are defined at the top of each script:
 **`03_sample.py`**
 
 ```python
-GERMAN_FREQ_S = 10   # resampling interval for Kiel/Bremerhaven
-NOAA_FREQ_S   = 60   # resampling interval for Marine Cadastre
+GERMAN_FREQ_S = 00   # resampling interval
 ```
 
 **`04_track_segmentation.py`**

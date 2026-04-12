@@ -1,4 +1,4 @@
-# 03_sample.py: time resampling (10s German, 60s NOAA)
+# time resampling 
 # Input:  output/02_cleaned/*.csv (with x,y but without lat,lon)
 # Output: output/03_sampled/*.csv (resampled trajectories)
 
@@ -9,21 +9,10 @@ from datetime import datetime
 
 # Global resampling frequencies (seconds)
 GERMAN_FREQ_S = 30
-NOAA_FREQ_S   = 60
 
-
-def infer_freq_from_name(name: str) -> int:
-    """Map filename to resampling frequency in seconds."""
-    lower = name.lower()
-    if 'kiel' in lower or 'bremerhaven' in lower or 'wedel' in lower:
-        return GERMAN_FREQ_S
-    if 'marinecadastre' in lower or 'mississippi' in lower:
-        return NOAA_FREQ_S
-
-    return GERMAN_FREQ_S
 
 def split_long_gaps(df: pd.DataFrame, max_gap_s: int) -> pd.DataFrame:
-    """Split vessel trajectories into segments at large time gaps."""
+    #Splits vessel trajectories into segments at large time gaps
     df = df.sort_values(['vessel_id', 't_utc']).copy()
     df['dt'] = df.groupby('vessel_id')['t_utc'].diff().dt.total_seconds() # per vessel time difference in seconds
     
@@ -60,7 +49,7 @@ def filter_unrealistic_rot(df: pd.DataFrame, max_rot=90.0) -> pd.DataFrame:
 
 
 def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
-    """Resample all vessel trajectories in df to fixed freq_s using time-linear interp."""
+    #Resample all vessel trajectories in df to fixed freq_s using time-linear interpolation
     df = split_long_gaps(df, max_gap_s=3 * freq_s)
     df = df.sort_values(['vessel_id', 't_utc']).copy()
 
@@ -100,7 +89,7 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
             )        
         g_resampled = g_resampled.loc[new_idx] 
 
-        # ++ compute dt: seconds to nearest real AIS point
+        # compute dt: seconds to nearest real AIS point
         new_times_s   = new_idx.astype(np.int64) / 1e9
         real_times_s  = pd.DatetimeIndex(real_times).astype(np.int64) / 1e9
         idx           = np.searchsorted(real_times_s, new_times_s).clip(0, len(real_times_s) - 1)
@@ -135,31 +124,24 @@ if __name__ == '__main__':
     total_in = total_out = 0
 
     for src in input_files:
-        print(f"\n{'='*60}")
-        print(f'Resampling: {src.name}')
-        print(f"{'='*60}")
 
         df = pd.read_csv(src, parse_dates=['t_utc']).copy()
         n_in = len(df)
 
-        freq_s = infer_freq_from_name(src.name)
-        print(f'  Using frequency: {freq_s}s')
+        freq_s = GERMAN_FREQ_S        
 
         df_resampled = resample_dataset(df, freq_s=freq_s)
 
-        df_resampled = calculate_rot(df_resampled, freq_s=freq_s)#unfortunately in sample but we want to use resampeld timestamps
+        df_resampled = calculate_rot(df_resampled, freq_s=freq_s)
         df_resampled = filter_unrealistic_rot(df_resampled, max_rot=90.0)
 
         n_out = len(df_resampled)
 
         dst = output_dir / src.name
         df_resampled.to_csv(dst, index=False)
-        print(f'  Saved: {dst}  ({n_out:,} rows from {n_in:,})')
 
         total_in  += n_in
         total_out += n_out
 
-    print(f"\n{'='*60}")
-    print(f'DONE  raw rows: {total_in:,}  →  resampled rows: {total_out:,}')# DONE  raw rows: 148,576,562  →  resampled rows: 45,679,532
+    print(f'DONE  raw rows: {total_in:,}  ->  resampled rows: {total_out:,}')# DONE  raw rows: 148,576,562  ->  resampled rows: 45,679,532
     print(f"Output dir: {output_dir}")
-    print(f"{'='*60}")

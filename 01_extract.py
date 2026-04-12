@@ -1,18 +1,15 @@
-# AIS Data Extractor for Multiple Datasets 
-# Supports: Kiel, Bremerhaven (semicolon format) + Marine Cadastre (CSV format)
+# AIS Data Extractor 
+
 # Output format: dataset, t_utc, vessel_id, lat, lon, sog, cog, heading, rot
-# Optional metadata: vessel_name, imo, call_sign, vessel_type, length, width, draft, cargo, nav_status, true_heading
 
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
 
-TEST_LIMIT =  None #5  # Limit number of files per dataset for testing. None = process all files. 
-#This should be a yaml because I test on my laptop and do full runs on VERA
-# 04 läuft, morgen dann 567      
+TEST_LIMIT =  2; None #5  # Limit number of files per dataset for testing. None = process all files. 
+
 def parse_coordinate(coord_str):
-    """Parse coordinate string like '54.419327N' or '10.280777E'"""
     coord_str = coord_str.strip()
     if not coord_str or coord_str == 'unk.':
         return np.nan
@@ -27,7 +24,6 @@ def parse_coordinate(coord_str):
 
 
 def parse_angle(angle_str):
-    """Parse angle string like '279.9°' or '511°' (511 = not available)"""
     angle_str = angle_str.strip().replace('°', '').replace("'", '')
     if angle_str == 'unk.' or not angle_str:
         return np.nan
@@ -40,7 +36,6 @@ def parse_angle(angle_str):
 
 
 def parse_speed(speed_str):
-    """Parse speed string like '0.0kt'"""
     speed_str = speed_str.strip().replace('kt', '')
     if not speed_str or speed_str == 'unk.':
         return np.nan
@@ -48,7 +43,6 @@ def parse_speed(speed_str):
 
 
 def parse_timestamp(ts_str):
-    """Parse timestamp like '210701 000045' -> datetime (YYMMDD format)"""
     ts_str = ts_str.strip()
     try:
         return pd.to_datetime(ts_str, format='%y%m%d %H%M%S')
@@ -57,35 +51,19 @@ def parse_timestamp(ts_str):
 
 
 def load_ais_data(filepath, dataset_name):
-    """
-    Load Kiel/Bremerhaven AIS data into pandas DataFrame
+    #Load parsed AIS data into pandas DataFrame
 
-    Args:
-        filepath: Path to AIS log file
-        dataset_name: Name identifier for the dataset (e.g., 'kiel', 'bremerhaven')
-
-    Returns:
-        DataFrame with parsed AIS position reports in standard format
-    """
+    #dataset_name: Name identifier for the dataset (e.g., 'kiel', 'bremerhaven')
+    
 
     position_records = []
     errors = {'parse_errors': 0, 'invalid_mmsi': 0, 'short_lines': 0}
     line_count = 0
 
-    print(f"\n{'='*60}")
-    print(f"Loading {dataset_name.upper()} dataset")
-    #print(f"{'='*60}")
-    print(f"File: {filepath}")
 
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             for line_count, line in enumerate(f, 1):
-
-                # Progress update every 50k lines
-                #if line_count % 50000 == 0:
-                #    print(f"  Processed {line_count:,} lines | "
-                #          f"Extracted {len(position_records):,} reports | "
-                #          f"Errors: {sum(errors.values())}")
 
                 fields = line.strip().split(';') # semicolon delimited for Kiel/Bremerhaven datasets
 
@@ -100,6 +78,8 @@ def load_ais_data(filepath, dataset_name):
                     continue
                 
                 #after adding the above check, below checks appear to be redundant but we can keep them for extra safety and error tracking 
+                #watching the preprocessing resulted in 0 for all these errors
+
                 # Skip short lines
                 if len(fields) < 10:
                     errors['short_lines'] += 1
@@ -129,7 +109,7 @@ def load_ais_data(filepath, dataset_name):
 
                     record = {
                         'dataset': dataset_name,
-                        #'t_utc': parse_timestamp(fields[9]),
+                        #'t_utc': parse_timestamp(fields[9]), # slower, doing all at once after creating DataFrame
                         't_utc': fields[9].strip(), 
                         'vessel_id': int(mmsi_str),
                         'lat': parse_coordinate(fields[4]),
@@ -137,7 +117,7 @@ def load_ais_data(filepath, dataset_name):
                         'sog': parse_speed(fields[3]),
                         'cog': parse_angle(fields[6]),
                         'heading': parse_angle(fields[2]),
-                        'rot': np.nan,  # Not available
+                        'rot': np.nan,  # Not available, calculated later in the pipeline
                         'nav_status': fields[1].strip(),
                         'true_heading': parse_angle(fields[7])
                     }
@@ -156,12 +136,12 @@ def load_ais_data(filepath, dataset_name):
         print(f"ERROR reading file: {e}")
         return None
 
-    print(f"\nParsing complete!")
-    print(f"  Total lines read: {line_count:,}")
-    print(f"  Position reports: {len(position_records):,}")
-    print(f"  Parse errors: {errors['parse_errors']}")
-    print(f"  Invalid MMSI: {errors['invalid_mmsi']}")
-    print(f"  Short lines: {errors['short_lines']}")
+    #print(f"\nParsing complete!")
+    #print(f"  Total lines read: {line_count:,}")
+    #print(f"  Position reports: {len(position_records):,}")
+    #print(f"  Parse errors: {errors['parse_errors']}")
+    #print(f"  Invalid MMSI: {errors['invalid_mmsi']}")
+    #print(f"  Short lines: {errors['short_lines']}")
 
     # Create DataFrame
     df = pd.DataFrame(position_records)
@@ -173,17 +153,12 @@ def load_ais_data(filepath, dataset_name):
     df['t_utc'] = pd.to_datetime(df['t_utc'], format='%y%m%d %H%M%S', errors='coerce') # converte all at once
 
     # Remove records with invalid timestamps or coordinates
-    initial_len = len(df)
-    df = df.dropna(subset=['t_utc', 'lat', 'lon', 'sog', 'cog'])# add sog and cog after crash in 04. dont include optional heading
-    if len(df) < initial_len:
-        print(f"  Removed {initial_len - len(df)} records with invalid data")
+    #initial_len = len(df)
+    df = df.dropna(subset=['t_utc', 'lat', 'lon', 'sog', 'cog'])# added sog and cog after crash in 04. did not include optional features like true_heading
+    #if len(df) < initial_len:
+    #    print(f"  Removed {initial_len - len(df)} records with invalid data")
 
     
-    # Convert categorical columns #todo required?
-    df['dataset'] = df['dataset'].astype('category')
-    df['nav_status'] = df['nav_status'].astype('category')
-
-    # Sort by vessel_id and timestamp
     df = df.sort_values(['vessel_id', 't_utc']).reset_index(drop=True)
 
     #print(f"\nDataset summary:")
@@ -213,14 +188,14 @@ if __name__ == "__main__":
 
     # Core columns to ensure consistent structure
     core_columns = ['dataset', 't_utc', 'vessel_id', 'lat', 'lon', 'sog', 'cog', 'heading', 'rot']
-    optional_columns = ['nav_status', 'true_heading', 'vessel_name', 'imo', 'call_sign', 'vessel_type', 'length', 'width', 'draft', 'cargo']
+    optional_columns = ['nav_status', 'true_heading', 'vessel_name', 'imo', 'call_sign', 'vessel_type', 'length', 'width', 'draft', 'cargo'] # legacy, Marinecadastre dataset
 
     for dataset_name, data_path in dataset_dirs.items():
         if not data_path.exists():
             print(f"Directory not found: {data_path}")
             continue
 
-        # Find all .log files downloaded from GovData (ignore old txt files)
+        # Find all .log files downloaded from GovData 
         valid_files = list(data_path.glob("*.log")) 
         if TEST_LIMIT:
             valid_files = valid_files[:TEST_LIMIT]
@@ -231,11 +206,10 @@ if __name__ == "__main__":
             continue
             
         for file_path in valid_files:
-            # Create a unique output name based on the original file
+            # Create unique output name based on original file
             out_filename = f"processed_{dataset_name}_{file_path.stem}.csv"
             out_path = output_dir / out_filename
 
-            # Skip if already processed
             if out_path.exists():
                 print(f"Skipping {file_path.name}, output already exists.")
                 continue

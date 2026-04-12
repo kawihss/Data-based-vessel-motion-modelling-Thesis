@@ -1,18 +1,13 @@
-#00_full_preprocessing_pipeline.py
-#!/usr/bin/env python3
-"""
-Executes preprocessing steps 01 to 05 in sequence, clearing output/ directory first for a clean run.
-Expects raw AIS data in Data/[Kiel|Bremerhaven|Mississippi]/
-"""
+#Executes preprocessing steps 01 to 05 in sequence, clearing output/ directory first for a clean run.
+#Input: raw AIS data in Data/[Kiel|Bremerhaven|Wedel]/
 
-#!/usr/bin/env python3
 import sys
 import subprocess
 from pathlib import Path
 
 
 START_AT_STEP = 1   # Choose 1-5
-CLEAR_OUTPUTS = True # False # Only clears folders for active steps
+CLEAR_OUTPUTS = True # Clears folders for active steps
 
 STEPS = [
     ("01_extract.py", "Data/", "output/01_raw/"),
@@ -24,9 +19,7 @@ STEPS = [
 
 def run_script(script_name: str):
     try:
-        print(f"\n{'='*70}")
         print(f"Running {script_name}")
-        print(f"{'='*70}")
         subprocess.run([sys.executable, script_name], check=True)
         print(f"{script_name} completed successfully")
     except subprocess.CalledProcessError as e:
@@ -36,13 +29,11 @@ def run_script(script_name: str):
 if __name__ == "__main__":
     print("AIS Vessel Trajectory Pipeline")
     print(f"Resume from Step: {START_AT_STEP} | Clear: {CLEAR_OUTPUTS}")
-    print("="*70)
     
     output_base = Path("output")
     
     # Step 0: Optional Cleanup
     if CLEAR_OUTPUTS:
-        print("\nClearing output directories...")
         for i in range(START_AT_STEP, len(STEPS) + 1):
             for step_dir in output_base.glob(f"0{i}*"):# directories starting with 01, 02, etc.
                 if step_dir.is_dir():
@@ -54,6 +45,4 @@ if __name__ == "__main__":
         script_name, _, _ = STEPS[i]
         run_script(script_name)
     
-    print("\n" + "="*70)
     print("PIPELINE COMPLETE!")
-    print("="*70)

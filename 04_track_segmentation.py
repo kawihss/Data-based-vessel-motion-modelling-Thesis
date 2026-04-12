@@ -23,7 +23,13 @@ LOW_SPEED_FRAC_MAX = 0.5
 AUGMENT: bool = True  # toggle for data augmentation
 GERMAN_FREQ_S = 30
 
-
+CONTEXT_MAPPING = {
+    'river': 0, 
+    'channel': 1, 
+    'harbour': 2, 
+    'lock': 3, 
+    'unknown': 4
+}
 
 def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: int, stride_s: int):
     #Slices vessel trajectory into context/prediction using stride
@@ -87,15 +93,11 @@ def apply_speed_filters(df: pd.DataFrame) -> pd.DataFrame:
     return df[df['track_id'].isin(valid_ids)].copy()
 
 def smooth_context_labels(context_series, window_size=6):
-    
     #Applies rolling majority vote to labels to remove GNSS jitter
+    int_to_label = {v: k for k, v in CONTEXT_MAPPING.items()}
     
-    unique_labels = context_series.unique() # 'river': 0, 'harbour': 1, 'lock': 2
-    label_to_int = {label: i for i, label in enumerate(unique_labels)}
-    int_to_label = {i: label for label, i in label_to_int.items()}
-    
-    numeric_series = context_series.map(label_to_int)
-    
+    numeric_series = context_series.map(CONTEXT_MAPPING)
+
     # Pure numpy mode calculation
     def get_mode(x):
         values, counts = np.unique(x, return_counts=True) 
@@ -116,7 +118,7 @@ def augment_rotate(df: pd.DataFrame, angle_deg: float, new_track_id_start: int) 
     x = df_aug['x']
     y = df_aug['y']
     
-    # turn around center of current trajectory
+    # centroid of current trajectory
     cx = x.mean()
     cy = y.mean()
     
@@ -126,7 +128,7 @@ def augment_rotate(df: pd.DataFrame, angle_deg: float, new_track_id_start: int) 
     df_aug['x'] = (x - cx) * c - (y - cy) * s + cx
     df_aug['y'] = (x - cx) * s + (y - cy) * c + cy
     
-    # Adjust angles (COG and Heading) by adding the rotation angle modulo 360
+    # Adjust angles by adding the rotation angle modulo 360
     if 'cog' in df_aug.columns:
         df_aug['cog'] = (df_aug['cog'] + angle_deg) % 360
     if 'heading' in df_aug.columns:
@@ -134,9 +136,8 @@ def augment_rotate(df: pd.DataFrame, angle_deg: float, new_track_id_start: int) 
     if 'true_heading' in df_aug.columns: # optional feature
         df_aug['true_heading'] = (df_aug['true_heading'] + angle_deg) % 360   
 
-
-    # Re-assign track IDs to ensure global uniqueness
-    unique_ids = df_aug['track_id'].unique()
+    # we might want to add an identifyer to the track_id to indicate augmentation, for now just re-assign new unique track IDs
+    unique_ids = df_aug['track_id'].unique() 
     track_mapping = {old_id: new_id for old_id, new_id in zip(unique_ids, range(new_track_id_start, new_track_id_start + len(unique_ids)))}
     df_aug['track_id'] = df_aug['track_id'].map(track_mapping)
     
@@ -147,20 +148,18 @@ def augment_mirror(df: pd.DataFrame, new_track_id_start: int) -> pd.DataFrame:
     
     cx = df_aug['x'].mean()
     
-    # Mirror across the local North-South axis (Y-axis) at the centroid
+    # Mirror across local North-South axis (Y-axis) at the centroid
     df_aug['x'] = cx - (df_aug['x'] - cx)
     
     # Adjust angles 
     df_aug['cog'] = (360 - df_aug['cog']) % 360
     df_aug['heading'] = (360 - df_aug['heading']) % 360
 
-    # Mirroring reverses the turn direction (Right turn becomes Left turn)
     # note rn rot is nan and calculated later, but this is a safeguard for any future changes
     if 'rot' in df_aug.columns:
         df_aug['rot'] = -df_aug['rot']
 
 
-    # Re-assign track IDs to ensure global uniqueness
     unique_ids = df_aug['track_id'].unique()
     track_mapping = {old_id: new_id for old_id, new_id in zip(unique_ids, range(new_track_id_start, new_track_id_start + len(unique_ids)))}
     df_aug['track_id'] = df_aug['track_id'].map(track_mapping)
@@ -174,35 +173,30 @@ if __name__ == '__main__':
     
     input_files = sorted(input_dir.glob('*.csv'))
     global_track_counter = 0
-    
     total_short_cuts = 0
 
     for src in input_files:
-        print(f"\n{'='*60}")
         print(f"Processing: {src.name}")
-        print(f"{'='*60}")
         df = pd.read_csv(src, parse_dates=['t_utc'])
         freq_s = GERMAN_FREQ_S
 
-        # remove this small block, redundant, 
-        #only necessary for before rerunning 01_extract on old test files that have NaNs in sog and cog. 
-        #now  01_extract already removes these rows.
-        n_before = len(df)
-        df = df.dropna(subset=['sog', 'rot', 'context']).reset_index(drop=True)
+        #only necessary for runs before rerunning 01_extract on old test files that have NaNs in sog and cog. 
+        #now  01_extract already removes these rows
+        #n_before = len(df)
+        #df = df.dropna(subset=['sog', 'rot', 'context']).reset_index(drop=True)
         if df.empty:
             continue
-        #until here #####                
 
 
-        # strafication:
+        # stratification features:
         vessel_profiles = df.groupby('vessel_id').agg({
             'sog': 'mean', # use mean SOG
             'rot': lambda x: x.abs().max(), # use max rot
             'context': lambda x: x.mode()[0] # use most frequent context
         }).reset_index()
 
-        # Convert context strings to numbers for the algorithm
-        vessel_profiles['context_idx'] = vessel_profiles['context'].astype('category').cat.codes
+        # Convert context strings to numbers 
+        vessel_profiles['context_idx'] = vessel_profiles['context'].map(CONTEXT_MAPPING)
 
         # Scale features: KMeans needs this so ROT (0-90) doesn't dominate SOG (0-15)
         scaler = StandardScaler()
@@ -213,15 +207,12 @@ if __name__ == '__main__':
         km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         vessel_profiles['stratum'] = km.fit_predict(scaled_features)
 
-        print(f"Stratification Summary for {src.name} ---")
         cluster_counts = vessel_profiles['stratum'].value_counts().sort_index()
-        for cluster_id, count in cluster_counts.items():
-            print(f"  Cluster {cluster_id}: {count} vessels")
 
         small_clusters = cluster_counts[cluster_counts < 6].index # avoid issue with wedel dataset where some clusters have only 1 vessel, which causes errors in stratified splitting.
         if not small_clusters.empty:
             largest_cluster = cluster_counts.idxmax()
-            vessel_profiles.loc[vessel_profiles['stratum'].isin(small_clusters), 'stratum'] = largest_cluster
+            vessel_profiles.loc[vessel_profiles['stratum'].isin(small_clusters), 'stratum'] = largest_cluster # simply assign to largest cluster
 
         # 70/15/15 Stratified Split
         v_train, v_temp = train_test_split(vessel_profiles['vessel_id'], test_size=0.30, 
@@ -232,10 +223,7 @@ if __name__ == '__main__':
                                          stratify=temp_profiles['stratum'], random_state=42)
 
         vessels_train, vessels_val = set(v_train), set(v_val)
-        #print(f"Split Distribution:")
-        #print(f"  Train: {len(vessels_train)} vessels")
-        #print(f"  Val:   {len(vessels_val)} vessels")
-        #print(f"  Test:  {len(v_test)} vessels")
+
         split_segments = {"train": [], "val": [], "test": []}
         
         #Generate Segments: Split by vessel AND context change
@@ -271,10 +259,11 @@ if __name__ == '__main__':
                 elif v_id in vessels_val: target = "val"
                 split_segments[target].extend(segments)
 
+
+
         #Process each split: apply speed filters and save
         for split_name, segments in split_segments.items():
             if not segments:
-                print(f" ! No segments generated for {split_name} split in {src.name}")
                 continue
             
             split_df = pd.concat(segments, ignore_index=True)
@@ -283,23 +272,22 @@ if __name__ == '__main__':
             for context_label, context_df in split_df.groupby('context'):
                 if context_label == 'unknown':
                     continue
-                print(f"Processing {split_name} split - Context: {context_label}")
                 filtered_df = apply_speed_filters(context_df)
                 
                 if AUGMENT and split_name == 'train' and context_label == 'lock' and not filtered_df.empty:
-                    print(f" Augmenting {context_label} data in train split...")
+                    print(f" Augmenting {context_label} ")
                     
                     augmented_dfs = [filtered_df]
                     
                     random_angles = np.random.uniform(0, 360, size=16)
                     
                     for angle in random_angles:
-                        # 1. Rotate
+                        # Rotate
                         rotated_df = augment_rotate(filtered_df, angle_deg=angle, new_track_id_start=global_track_counter)
                         global_track_counter += rotated_df['track_id'].nunique()
                         augmented_dfs.append(rotated_df)
                         
-                        # 2. mirror the rotated dataset
+                        # mirror the rotated dataset
                         mirrored_df = augment_mirror(rotated_df, new_track_id_start=global_track_counter)
                         global_track_counter += mirrored_df['track_id'].nunique()
                         augmented_dfs.append(mirrored_df)
@@ -312,5 +300,5 @@ if __name__ == '__main__':
                     n_tracks = filtered_df['track_id'].nunique()
                     print(f" Saved {n_tracks:,} tracks to {dst.name}")
             
-    print(f"\nFinal Report: {total_short_cuts} segments were too short after context-splitting and were discarded.")
-    print(f"Finished processing all files.")
+    print(f"\n {total_short_cuts} segments were too short after context-splitting and were discarded")
+    print(f"Finished segmenting all files")

@@ -1,4 +1,4 @@
-# 02_clean.py: AIS Cleaning: coordinate conversion, deduplication, MMSI hashing, context labeling
+# AIS Cleaning: coordinate conversion, deduplication, MMSI hashing, context labeling
 # Input:  output/01_raw/*.csv
 # Output: output/02_cleaned/*.csv this is what we can publish, 01_raw is not anonymized yet, features are output later
 
@@ -12,20 +12,17 @@ import geopandas as gpd
 import osmnx as ox
 from shapely.geometry import box
 
-# --- OSMnx API Settings ---
+#  OSMnx API Settings
 ox.settings.overpass_endpoint = "https://overpass.kumi.systems/api/interpreter" # mirror that is more reliable for large queries
 ox.settings.max_query_area_size = 5 * 1e9  # 5000 km² 
 ox.settings.timeout = 600                  # 10 minutes timeout for large queries
-# --------------------------
 
 
-# Hashing
+# HA-256 Hashing to 12 characters
 def hash_mmsi(mmsi) -> str:
-    """One-way SHA-256 hash of MMSI → 12-char anonymous vessel ID."""
     return hashlib.sha256(str(int(mmsi)).encode()).hexdigest()[:12]
 
 
-# UTM conversion and anonymization
 def add_utm_coordinates(df: pd.DataFrame):
     df = df.copy()
     median_lon = df['lon'].median()
@@ -33,7 +30,10 @@ def add_utm_coordinates(df: pd.DataFrame):
     zone = int((median_lon + 180) / 6) + 1
     epsg = f"326{zone:02d}" if median_lat >= 0 else f"327{zone:02d}"#epsg code for UTM zone, 326 for northern hemisphere, 327 for southern hemisphere
 
-    transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True) # WGS84 lat/lon to UTM, always_xy ensures input is (lon, lat) order
+    #Transformer is a class from pyproj that handles coordinate transformations. 
+    # We create a transformer object that converts from WGS84 (EPSG:4326) to the appropriate UTM zone based on the median coordinates of the dataset.
+    # always_xy=True ensures that the input order is (lon, lat) which is required for pyproj.
+    transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True) 
 
     valid = df['lat'].notna() & df['lon'].notna()
     x = np.full(len(df), np.nan)
@@ -47,7 +47,6 @@ def add_utm_coordinates(df: pd.DataFrame):
     df['y'] = y
 
     hemi = 'N' if median_lat >= 0 else 'S'
-    print(f"  UTM Zone {zone}{hemi} (EPSG:{epsg})")
     return df, epsg
 
 def fetch_osm_water_features(west, south, east, north) -> gpd.GeoDataFrame:
@@ -62,9 +61,8 @@ def fetch_osm_water_features(west, south, east, north) -> gpd.GeoDataFrame:
     }
     
     try:
-        # Create a polygon from the bounding box to be version-safe with OSMnx
+        # Create a polygon from the bounding box and fetch OSM features within it
         bounding_polygon = box(west, south, east, north)
-        print(f"  Fetching OSM data for Bounding Box...")
         gdf = ox.features_from_polygon(bounding_polygon, tags)
     except Exception as e:
         print(f"  WARNING: Failed to fetch OSM data: {e}")
@@ -97,10 +95,8 @@ def fetch_osm_water_features(west, south, east, north) -> gpd.GeoDataFrame:
     return gdf[gdf.geometry.type.isin(valid_geoms)].copy()
 
 def assign_water_context(df: pd.DataFrame, epsg: str, dataset_name: str) -> pd.DataFrame:
-    # 1. bounding box from actual ship coordinates with a buffer of ~5km (0.05 degrees) to ensure ships near the edge can still find water features
 
-
-# 1. Static boxes are very big, but cover all files after filter -> cheaper than downloading smaller boxes for each file
+#  Static boxes are very big, but cover all files after filter -> cheaper than downloading smaller boxes for each file
     if 'bremerhaven' in dataset_name:
         south, north = 53.40, 54.00
         west, east = 8.00, 8.80
@@ -193,7 +189,7 @@ def remove_position_jumps(df: pd.DataFrame, threshold=2.0) -> pd.DataFrame:
     """Delete rows where displacement exceeds threshold × speed-implied distance."""
     df = df.copy().sort_values('t_utc').reset_index(drop=True)
 
-    dt = df['t_utc'].diff().dt.total_seconds().values # (works on all Pandas versions). timestam unit changes between pandas versions!!
+    dt = df['t_utc'].diff().dt.total_seconds().values # (works on all Pandas versions). carefull, timestamp unit changes between pandas versions!!
     dx = np.diff(df['x'].values, prepend=np.nan)
     dy = np.diff(df['y'].values, prepend=np.nan)
     actual_dist = np.sqrt(dx**2 + dy**2)             # metres
@@ -221,7 +217,7 @@ def remove_fast_vessels(df: pd.DataFrame, max_sog=30) -> pd.DataFrame:
 def clean(df: pd.DataFrame) -> pd.DataFrame:
     n0 = len(df)
 
-    # 1. Geographic bounds filter (dataset-specific). very vague for now, just to catch obvious outliers and coordinate errors. to be reifined later for missisipi dataset.
+    # Geographic bounds filter. very vague, just to catch obvious outliers and coordinate errors. 
     n_pre_geo = len(df)  
 
     dataset_name = df['dataset'].iloc[0].lower()
@@ -235,15 +231,15 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"Unknown dataset for geographic bounds filter: {dataset_name}")
 
     df = df[mask].copy()
-    print(f"  Geographic filter kept {len(df):,} / {n_pre_geo:,} rows")
+    #print(f"  Geographic filter kept {len(df):,} / {n_pre_geo:,} rows")
 
 
-    # 2. Anonymize MMSI hashed vessel_id
+    # Anonymize MMSI hashed vessel_id
     df['vessel_id'] = df['vessel_id'].apply(hash_mmsi)
-    print(f"  Hashed {df['vessel_id'].nunique()} unique vessel IDs")
+    #print(f"  Hashed {df['vessel_id'].nunique()} unique vessel IDs")
 
     
-    # 3. Remove duplicates: keep row with most non-null values
+    # Remove duplicates: keep row with most non-null values
     n_before_dedup = len(df)
 
     df['_non_null'] = df.notna().sum(axis=1)
@@ -251,12 +247,12 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     df = df.drop_duplicates(subset=['vessel_id', 't_utc'], keep='first')
     df = df.drop(columns='_non_null')
 
-    print(f"  Duplicates removed: {n_before_dedup - len(df):,}")
+    #print(f"  Duplicates removed: {n_before_dedup - len(df):,}")
 
-    # 4. UTM coordinate conversion
+    # UTM coordinate conversion
     df, epsg = add_utm_coordinates(df)
     
-    # Neu: Wasser-Kategorien (Context Labeling) zuordnen, solange die Koordinaten absolut sind
+    # assign context labels
     df = assign_water_context(df, epsg, dataset_name)
 
     # Origin subtraction for positional anonymization (Moved from add_utm_coordinates)
@@ -275,17 +271,12 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
 
     #Remove position jumps per vessel and filter out vessels that exceed speed threshold 
     n_before_jumps = len(df)
-    #df = df.groupby('vessel_id', group_keys=False).apply(remove_position_jumps)
-    #df = df.groupby('vessel_id').apply(remove_position_jumps).reset_index(level=0).reset_index(drop=True)
-    #df = df.groupby('vessel_id', group_keys=False).apply(remove_position_jumps, include_groups=False)
-    df = pd.concat([remove_position_jumps(group) for _, group in df.groupby('vessel_id')]).reset_index(drop=True) # because pandas just causes trouble
-    print(f"  Jump filter removed: {n_before_jumps - len(df):,}")
+    df = pd.concat([remove_position_jumps(group) for _, group in df.groupby('vessel_id')]).reset_index(drop=True) # for loop because pandas just causes trouble between different versions
+    print(f"  Jump filter removed: {n_before_jumps - len(df):,}") # left this in because of the error described in the thesis
 
     df = remove_fast_vessels(df, max_sog=30)
 
-    print(f"  Rows: {n0:,} → {len(df):,} (removed {n0 - len(df):,})")
-
-
+    #print(f" removed {n0 - len(df):,} rows in total")
 
 
     df = df.drop(columns=['lat', 'lon'])
@@ -306,9 +297,7 @@ if __name__ == "__main__":
     total_in = total_out = 0
 
     for src in input_files:
-        print(f"\n{'='*60}")
         print(f"Cleaning: {src.name}")
-        print(f"{'='*60}")
 
         df = pd.read_csv(src, parse_dates=['t_utc']).copy()
         n_in = len(df)
@@ -324,7 +313,5 @@ if __name__ == "__main__":
         total_out += n_out
 
     
-    print(f"\n{'='*60}")
-    print(f"DONE  {total_in:,} → {total_out:,} rows")
-    print(f"{'='*60}")
+    print(f"DONE  {total_in:,} -> {total_out:,} rows")
 
