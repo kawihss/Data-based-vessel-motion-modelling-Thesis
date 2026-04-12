@@ -1,4 +1,4 @@
-# 05_normalize.py — Normalization: displacements, sin/cos COG, z-score
+# Normalization: displacements, sin/cos COG, z-score
 # split is done before normalization and normalization is applied per split, 
 # scaler is fitted on train only and applied to all splits to avoid data leakage
 # Input:  output/04_trajectories/*.csv 
@@ -13,14 +13,13 @@ import joblib
 from sklearn.preprocessing import StandardScaler
 
 NUMERIC_FEATURES = ['dx', 'dy', 'sog', 'cog_sin', 'cog_cos', 'dt', 'rot']
-KEEP_COLS = ['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog', 'rot', 'context', 'vessel_id']
+KEEP_COLS = ['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog', 'rot', 'context', 'vessel_id', 'dt']
 
 
 def compute_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute dx/dy displacements and sin/cos COG encoding across all tracks."""
+    # dx/dy displacements and sin/cos COG encoding across all tracks
     df = df.copy().sort_values(['track_id', 't_utc'])
 
-    df['dt'] = df.groupby('track_id')['t_utc'].diff().dt.total_seconds().fillna(0) # have to fillna if I want use as input
     df['dx'] = df.groupby('track_id')['x'].diff().fillna(0)
     df['dy'] = df.groupby('track_id')['y'].diff().fillna(0)
 
@@ -32,7 +31,7 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False):
-    """Compute features per track, then z-score."""
+    #Compute features per track, then z-score
 
     df = compute_features(df)
 
@@ -48,10 +47,8 @@ def normalize_dataset(df: pd.DataFrame, scaler=None, fit=False):
         columns=[f'{feature}_norm' for feature in NUMERIC_FEATURES],
         index=df.index
     )
-
-    keep_cols = KEEP_COLS#['track_id', 'role', 't_utc', 'x', 'y', 'sog', 'cog', 'rot', 'context', 'vessel_id']
-   
-    df_out = pd.concat([df[keep_cols], df_numeric], axis=1)
+  
+    df_out = pd.concat([df[KEEP_COLS], df_numeric], axis=1)
 
     print(f" Normalized {len(df):,} rows ({df['track_id'].nunique():,} tracks)")
     return df_out, scaler
@@ -62,7 +59,6 @@ if __name__ == "__main__":
     output_dir = Path("output/05_normalized")
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Group files by dataset (train/val/test)
     train_files = sorted(input_dir.glob("train_*.csv"))
     val_files   = sorted(input_dir.glob("val_*.csv"))
     test_files  = sorted(input_dir.glob("test_*.csv"))
@@ -94,9 +90,7 @@ if __name__ == "__main__":
             print(f"No {split_name} files found")
             continue
             
-        print(f"\n{'='*60}")
         print(f"Normalizing {split_name}")
-        print(f"{'='*60}")
         
         for src in files:
             df = pd.read_csv(src, parse_dates=['t_utc'], dtype={'rot': 'float32'}, usecols=KEEP_COLS, date_format='%Y-%m-%d %H:%M:%S', low_memory=False)
@@ -119,7 +113,5 @@ if __name__ == "__main__":
     
     # Save scaler for evaluation and reproducibility
     joblib.dump(scalers, output_dir / "scalers.pkl")
-    print(f"\n{'='*60}")
     print(f"NORMALIZED {total_rows:,} rows ({total_tracks:,} tracks)")
     print(f"Train-only scaler saved: {output_dir}/scalers.pkl")
-    print(f"{'='*60}")
