@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 
-TEST_LIMIT =  2; None #5  # Limit number of files per dataset for testing. None = process all files. 
+TEST_LIMIT =  None #5  # Limit number of files per dataset for testing. None = process all files. 
 
 def parse_coordinate(coord_str):
     coord_str = coord_str.strip()

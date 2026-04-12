@@ -35,13 +35,11 @@ matplotlib.use('Agg') # prevents segfault on VERA
 # Create output folder if it doesn't exist
 os.makedirs("output/06_statistics", exist_ok=True)
 
-# Count raw AIS messages 
 print("Counting raw AIS messages...")
 total_raw = sum(len(chunk) for file in glob.glob("output/01_raw/*.csv") 
                 for chunk in pd.read_csv(file, usecols=[0], chunksize=1000000))
 
 print(f"Total raw messages: {total_raw}")
-print("-" * 50)
 
 # Process data
 print("Processing final trajectories...")
@@ -99,32 +97,28 @@ for file in glob.glob("output/05_normalized/*.csv"):
 print(f"Kiel        | Vessels: {len(kiel_vessels)} | Tracks: {len(kiel_tracks)} ")
 print(f"Bremerhaven | Vessels: {len(brem_vessels)} | Tracks: {len(brem_tracks)} ")
 print(f"Wedel       | Vessels: {len(wed_vessels)} | Tracks: {len(wed_tracks)} ")
-print("-" * 50)
 
-# Convert sets of track_ids into final counts
+# sets of track_ids into final counts
 final_context_counts = {
     station: pd.Series({ctx: len(tracks) for ctx, tracks in ctx_dict.items()})
     for station, ctx_dict in true_contexts.items()
 }
 
-# Print exact trajectory counts to console
 print("Distinct Trajectories per Context:")
 for station, counts in final_context_counts.items():
     print(f"--- {station} ---")
     print(counts.sort_values(ascending=False).to_string() if not counts.empty else "No context data")
-print("-" * 50)
 
-# Combine sampled data for continuous distributions
 df_plot = pd.concat(plot_data, ignore_index=True)
 
-# Create Histograms
+# Histograms
 stations = ['Kiel', 'Bremerhaven', 'Wedel']
 fig, axes = plt.subplots(nrows=4, ncols=len(stations), figsize=(18, 16))
 
 for i, station in enumerate(stations):
     station_data = df_plot[df_plot['station'] == station]
     
-    # Plotting sampled distributions for SOG, COG, ROT
+    # sampled distributions for SOG, COG, ROT
     axes[0, i].hist(station_data['sog'].dropna(), bins=40, color='blue', alpha=0.6, density=True)
     axes[0, i].set_title(f"{station} - SOG (knots)")
     
@@ -134,7 +128,7 @@ for i, station in enumerate(stations):
     axes[2, i].hist(station_data['rot'].dropna(), bins=40, color='green', alpha=0.6, density=True)
     axes[2, i].set_title(f"{station} - ROT (deg/min)")
 
-    # Plot the distinct trajectory counts for context
+    # distinct trajectory counts for context
     counts_series = final_context_counts.get(station, pd.Series(dtype=int))
     
     if not counts_series.empty:
@@ -180,9 +174,8 @@ for i, station in enumerate(stations):
             
     axes_polar[i].set_title(f"{station} - COG Polar Heatmap", pad=20, fontsize=14)
 
-plt.tight_layout()
+plt.tight_layout() # formating issues with label on top, ignore warning, it looks good now
 polar_output_path = "output/06_statistics/cog_polar_heatmap.pdf"
 plt.savefig(polar_output_path, bbox_inches='tight')
 plt.close(fig_polar) # Clean up memory again
 print(f"Saved COG polar heatmap to {polar_output_path}", flush=True)
-print("-" * 50)
