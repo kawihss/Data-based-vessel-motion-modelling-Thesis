@@ -1,6 +1,5 @@
 # AIS Reporting Interval Analysis
 # Visualizes observed update frequency vs ITU-R M.1371-5 spec
-# Thesis-quality plots: LaTeX fonts, PDF export, clean style
 
 import pandas as pd
 import numpy as np
@@ -9,7 +8,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from pathlib import Path
 
-# ── Thesis plot style ────────────────────────────────────────────────────────
 mpl.rcParams.update({
     "text.usetex":        True,
     "font.family":        "serif",
@@ -27,12 +25,11 @@ mpl.rcParams.update({
     "figure.dpi":         150,
 })
 
-TEXTWIDTH  = 5.5   # LaTeX \textwidth in inches (single column)
+TEXTWIDTH  = 5.5   
 TEXTHEIGHT = 3.5
 
 Path("output/figures").mkdir(parents=True, exist_ok=True)
 
-# ── ITU-R M.1371-5 spec bands (Class A) ─────────────────────────────────────
 SPEC_BANDS_A = [
     (0,   3,   180,  "Anchored $\\leq$3 kn"),   # 3 min
     (0,   14,  10,   "0--14 kn"),
@@ -48,7 +45,6 @@ SPEC_BANDS_B = [
 
 
 def compute_intervals(df):
-    """Compute per-message time delta (seconds) within each vessel track."""
     df = df.sort_values(['vessel_id', 't_utc'])
     df['dt'] = (df.groupby('vessel_id')['t_utc']
                   .diff()
@@ -60,7 +56,6 @@ def compute_intervals(df):
 
 
 def sog_bin(df, bin_edges=None):
-    """Add a SOG bin column for grouping."""
     if bin_edges is None:
         bin_edges = [0, 1, 3, 7, 14, 23, 35, 50]
     labels = [f"{a}--{b}" for a, b in zip(bin_edges[:-1], bin_edges[1:])]
@@ -68,13 +63,9 @@ def sog_bin(df, bin_edges=None):
     return df, labels
 
 
-# ════════════════════════════════════════════════════════════════════════════
 # PLOT 1 — Median reporting interval vs SOG  (one line per dataset)
-# ════════════════════════════════════════════════════════════════════════════
 def plot_interval_vs_sog(datasets: dict, save_path="output/figures/interval_vs_sog.pdf"):
-    """
-    datasets: {label: dataframe}  — each df must have t_utc, vessel_id, sog
-    """
+
     bin_edges = [0, 3, 14, 23, 50]
     bin_centres = [1.5, 8.5, 18.5, 36.5]  # midpoints of each spec band
 
@@ -110,9 +101,7 @@ def plot_interval_vs_sog(datasets: dict, save_path="output/figures/interval_vs_s
     print(f"Saved: {save_path}")
 
 
-# ════════════════════════════════════════════════════════════════════════════
 # PLOT 2 — Distribution of reporting intervals (histogram) per dataset
-# ════════════════════════════════════════════════════════════════════════════
 def plot_interval_histogram(datasets: dict, save_path="output/figures/interval_hist.pdf"):
     n = len(datasets)
     fig, axes = plt.subplots(1, n, figsize=(TEXTWIDTH * n / 2, TEXTHEIGHT),
@@ -148,9 +137,7 @@ def plot_interval_histogram(datasets: dict, save_path="output/figures/interval_h
     print(f"Saved: {save_path}")
 
 
-# ════════════════════════════════════════════════════════════════════════════
 # PLOT 3 — Median interval per vessel (violin/box per SOG bin)
-# ════════════════════════════════════════════════════════════════════════════
 def plot_interval_boxplot(datasets: dict, save_path="output/figures/interval_boxplot.pdf"):
     fig, axes = plt.subplots(1, len(datasets),
                               figsize=(TEXTWIDTH, TEXTHEIGHT + 0.5),
@@ -189,12 +176,8 @@ def plot_interval_boxplot(datasets: dict, save_path="output/figures/interval_box
     print(f"Saved: {save_path}")
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
 
-    # Load your processed datasets
     dataset_files = {
         'Kiel 2021-07-01':        'output/processed_ais_kiel_20210701.csv',
         'Bremerhaven 2018-04-04': 'output/processed_ais_bremerhaven_20180404.csv',

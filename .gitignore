@@ -1,6 +1,6 @@
 #ignore /Directories 
 Data/
-output/
+output*/
 cache/
 .vscode/
 venv/

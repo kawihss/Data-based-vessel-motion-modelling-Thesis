@@ -50,6 +50,8 @@ def create_samples_efficient(group: pd.DataFrame, freq_s: int, start_track_id: i
         end_t = group['t_utc'].iat[i + n_pred - 1]
         if (end_t - start_t) > (WINDOW_DUR + PRED_HORIZON) * 1.1:  # Allow 10% tolerance for irregular sampling. 
             #Being stricter here will make assumpotions in the model about regular sampling more valid, but will throw out more segments. Adjust as needed.
+            # we can only do this, because we include the dt feature which allows the model to handle irregular sampling to some extent, because it can learn to recognize and ignore large dt values
+
             continue
 
         ctx = group.iloc[i - n_ctx : i].copy()

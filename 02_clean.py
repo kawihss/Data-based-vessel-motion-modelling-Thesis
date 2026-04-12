@@ -186,7 +186,7 @@ def assign_water_context(df: pd.DataFrame, epsg: str, dataset_name: str) -> pd.D
 
 
 def remove_position_jumps(df: pd.DataFrame, threshold=2.0) -> pd.DataFrame:
-    """Delete rows where displacement exceeds threshold × speed-implied distance."""
+    #Delete rows where displacement exceeds threshold × speed-implied distance
     df = df.copy().sort_values('t_utc').reset_index(drop=True)
 
     dt = df['t_utc'].diff().dt.total_seconds().values # (works on all Pandas versions). carefull, timestamp unit changes between pandas versions!!
@@ -205,7 +205,7 @@ def remove_position_jumps(df: pd.DataFrame, threshold=2.0) -> pd.DataFrame:
     return df[~is_jump].reset_index(drop=True)
 
 def remove_fast_vessels(df: pd.DataFrame, max_sog=30) -> pd.DataFrame:
-    """Remove all rows belonging to vessels that ever exceed max_sog knots."""
+    #Remove all rows belonging to vessels that ever exceed max_sog knots
     fast_ids = df.groupby('vessel_id')['sog'].max()
     fast_ids = fast_ids[fast_ids > max_sog].index
     mask = df['vessel_id'].isin(fast_ids)

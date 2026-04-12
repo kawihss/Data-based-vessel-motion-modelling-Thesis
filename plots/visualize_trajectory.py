@@ -1,17 +1,17 @@
 # AIS Trajectory Visualizer
-# Not part of the thesis, just a quick tool to visualize the tracks and check data quality.
 
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
 from pathlib import Path
 
+#this script can be used to manually inspect individual tracks 
+#created with help of Claude Sonnet for interactive plotting
 
 def load_data(source):
     if isinstance(source, pd.DataFrame):
         df = source.copy()
     else:
-        print(f"Loading data from: {source}")
         df = pd.read_csv(source)
         df['t_utc'] = pd.to_datetime(df['t_utc'])
 
@@ -110,26 +110,8 @@ def create_interactive_plot(df):
 
     slider.on_changed(update_track)
 
-    # Initial plot
     update_track(0)
-
-    print(f"Track ID slider: 0 to {n_tracks-1} ({n_tracks} total tracks)")
-    print("Each track: context (dots + line) → prediction (stars)")
     plt.show()
-
-
-def create_track_summary(df, save_path='output/track_summary.png'):
-    """Simplified track length summary"""
-    lengths = df.groupby('track_id').size()
-    ctx_count = df[df['role'] == 'context'].groupby('track_id').size()
-    pred_count = df[df['role'] == 'prediction'].groupby('track_id').size()
-    
-    print(f"\n=== TRACK SUMMARY ===")
-    print(f"Avg track length: {lengths.mean():.1f} ± {lengths.std():.1f}")
-    print(f"Tracks with 72 points: {(lengths == 72).sum()}")
-    print(f"Avg context points: {ctx_count.mean():.1f}")
-    print(f"Avg prediction points: {pred_count.mean():.1f}")
-    print(f"Tracks with 12 pred points: {(pred_count == 12).sum()}")
     
   
 
@@ -141,8 +123,6 @@ if __name__ == "__main__":
 
     if Path(csv_file).exists():
         df = load_data(csv_file)
-        create_track_summary(df)
-        print("\nOpening Track ID visualizer...")
         create_interactive_plot(df)
     else:
         print(f"ERROR: File not found: {csv_file}")

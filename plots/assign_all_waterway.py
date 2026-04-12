@@ -4,10 +4,7 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 
 def fetch_and_plot_water_tags(place_name="Kiel, Germany"):
-    """
-    Fetches OSM water features for a given location and plots them 
-    categorized by their primary tags (waterway, water, or landuse).
-    """
+
     print(f"Fetching OSM water features for: {place_name}...")
     
     tags = {

@@ -6,12 +6,12 @@ ox.settings.overpass_endpoint = "https://overpass.kumi.systems/api/interpreter"
 ox.settings.max_query_area_size = 5 * 1e9  
 ox.settings.timeout = 600
 
-
+# this script visually tests the logic later implemented in 02_assign_relevant_waterway.py,
+# assigns a waterway type to each AIS point based on OSM data. 
+# #It fetches all relevant water features for a given place, categorizes them into river/channel/lock/other, and plots them with different colors to verify the classification logic.
 
 def get_water_features(place_name="Kiel, Germany"):
-    """
-    Fetches and categorizes OSM water features into river, channel, lock, and other.
-    """
+
     tags = {
         "natural": "water",      
         "waterway": True,        
