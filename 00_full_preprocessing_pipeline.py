@@ -3,10 +3,11 @@
 
 import sys
 import subprocess
+import time
 from pathlib import Path
 
 
-START_AT_STEP = 1   # Choose 1-5
+START_AT_STEP = 4   # Choose 1-5
 CLEAR_OUTPUTS = True # Clears folders for active steps
 
 STEPS = [
@@ -20,8 +21,11 @@ STEPS = [
 def run_script(script_name: str):
     try:
         print(f"Running {script_name}")
+        start_time = time.time()
         subprocess.run([sys.executable, script_name], check=True)
+        duration = time.time() - start_time
         print(f"{script_name} completed successfully")
+        return duration
     except subprocess.CalledProcessError as e:
         print(f"{script_name} failed with exit code {e.returncode}")
         sys.exit(1)
@@ -41,8 +45,12 @@ if __name__ == "__main__":
                         file.unlink()
                     print(f"   Cleared {step_dir.name}")
     
+    timings = {}
     for i in range(START_AT_STEP - 1, len(STEPS)):
         script_name, _, _ = STEPS[i]
-        run_script(script_name)
+        timings[script_name] = run_script(script_name)
     
     print("PIPELINE COMPLETE!")
+    
+    for script, duration in timings.items():
+        print(f"{script}: {duration:.2f} seconds")
