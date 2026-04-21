@@ -1,11 +1,13 @@
 import numpy as np
 import pandas as pd
+import re
 from pathlib import Path
 from .metrics import evaluate_trajectory, plot_ade_over_horizon
 from models.kinematic import ConstantVelocityModel
 
 # Valid context labels from the preprocessing pipeline
 CONTEXT_LABELS = {'river', 'channel', 'harbour', 'lock', 'unknown'}
+MONTH_PATTERN = re.compile(r"(\d{4})-(\d{2})_\d{2}$")
 
 
 def _resolve_files(data_dir, split, context_filter):
@@ -26,6 +28,15 @@ def _resolve_files(data_dir, split, context_filter):
     return files
 
 
+def _extract_month_label(file_path):
+    name = Path(file_path).stem
+    match = MONTH_PATTERN.search(name)
+    if match is not None:
+        year, month = match.groups()
+        return f"{year}-{month}"
+    return None
+
+
 def load_tracks(data_dir, split='test', context_filter=None):
     # Generator that yields (context_df, pred_df) one track at a time.
     # Reads one file at a time so only one CSV is in memory at once.
@@ -44,6 +55,15 @@ def load_tracks(data_dir, split='test', context_filter=None):
                 yield context, pred
 
 
+def load_tracks_from_file(file_path):
+    df = pd.read_csv(file_path, low_memory=False)
+    for _, group in df.groupby('track_id', sort=False):
+        context = group[group['role'] == 'context']
+        pred = group[group['role'] == 'prediction']
+        if len(context) > 0 and len(pred) > 0:
+            yield context, pred
+
+
 def reconstruct_positions(last_x, last_y, displacements):
     # displacements: (n_steps, 2) array of predicted (dx, dy)
     # returns absolute (x, y) positions: (n_steps, 2)
@@ -53,11 +73,7 @@ def reconstruct_positions(last_x, last_y, displacements):
     return positions
 
 
-def evaluate_model(model, tracks):
-    # Core evaluation loop, Optuna objective calls this directly.
-    # tracks: generator or list of (context_df, pred_df) from load_tracks()
-    # Accumulates only small numpy arrays, not full DataFrames, to stay memory efficient.
-    # returns dict with ADE, FDE, RMSE, n_tracks
+def _evaluate_tracks(model, tracks):
     all_true = []
     all_pred = []
 
@@ -76,12 +92,53 @@ def evaluate_model(model, tracks):
         all_true.append(true_positions)
         all_pred.append(pred_positions)
 
-    all_true = np.array(all_true)  # (n_tracks, n_steps, 2)
+    if not all_true:
+        empty_true = np.empty((0, 0, 2))
+        empty_metrics = {
+            'ADE': np.nan,
+            'FDE': np.nan,
+            'RMSE': np.nan,
+            'ADE_per_step': np.array([]),
+            'n_tracks': 0,
+        }
+        return empty_metrics, empty_true, empty_true.copy()
+
+    all_true = np.array(all_true)
     all_pred = np.array(all_pred)
 
     metrics = evaluate_trajectory(all_true, all_pred)
     metrics['n_tracks'] = len(all_true)
+    return metrics, all_true, all_pred
+
+
+def evaluate_model(model, tracks):
+    # Core evaluation loop, Optuna objective calls this directly.
+    # tracks: generator or list of (context_df, pred_df) from load_tracks()
+    # Accumulates only small numpy arrays, not full DataFrames, to stay memory efficient.
+    # returns dict with ADE, FDE, RMSE, n_tracks
+    metrics, _, _ = _evaluate_tracks(model, tracks)
     return metrics
+
+
+def evaluate_file_metrics(model, data_dir, split='test', context_filter=None):
+    files = _resolve_files(data_dir, split, context_filter)
+    rows = []
+
+    print(f"Evaluating {len(files)} file(s) individually for split '{split}'")
+
+    for file_path in files:
+        metrics, _, _ = _evaluate_tracks(model, load_tracks_from_file(file_path))
+        row = {
+            'file': Path(file_path).name,
+            'month': _extract_month_label(file_path),
+            'ADE': metrics['ADE'],
+            'FDE': metrics['FDE'],
+            'RMSE': metrics['RMSE'],
+            'n_tracks': metrics['n_tracks'],
+        }
+        rows.append(row)
+
+    return pd.DataFrame(rows).sort_values(['RMSE', 'FDE', 'ADE'], ascending=False).reset_index(drop=True)
 
 
 def plot_horizon_error(metrics, label=None, ax=None, step_duration_s=30, save_path=None):
@@ -107,7 +164,65 @@ def run_evaluation(model, data_dir, split='test', context_filter=None):
     #       frac = trial.suggest_float('velocity_fraction', 0.1, 1.0)
     #       model = ConstantVelocityModel(velocity_fraction=frac)
     #       return run_evaluation(model, 'output/05_normalized', context_filter='lock')['ADE']
-    tracks = load_tracks(data_dir, split=split, context_filter=context_filter)
-    return evaluate_model(model, tracks)
+    files = _resolve_files(data_dir, split, context_filter)
+    print(f"Streaming {len(files)} file(s) for split '{split}'" +
+          (f", context(s) {context_filter}" if context_filter else ""))
+
+    per_file_rows = []
+    all_true = []
+    all_pred = []
+
+    for file_path in files:
+        file_metrics, file_true, file_pred = _evaluate_tracks(model, load_tracks_from_file(file_path))
+        per_file_rows.append({
+            'file': Path(file_path).name,
+            'month': _extract_month_label(file_path),
+            'ADE': file_metrics['ADE'],
+            'FDE': file_metrics['FDE'],
+            'RMSE': file_metrics['RMSE'],
+            'n_tracks': file_metrics['n_tracks'],
+        })
+
+        if file_metrics['n_tracks'] > 0:
+            all_true.extend(file_true)
+            all_pred.extend(file_pred)
+
+    if all_true:
+        metrics = evaluate_trajectory(np.array(all_true), np.array(all_pred))
+        metrics['n_tracks'] = len(all_true)
+    else:
+        metrics = {
+            'ADE': np.nan,
+            'FDE': np.nan,
+            'RMSE': np.nan,
+            'ADE_per_step': np.array([]),
+            'n_tracks': 0,
+        }
+
+    per_file_metrics = pd.DataFrame(per_file_rows)
+    if not per_file_metrics.empty:
+        per_file_metrics = per_file_metrics.sort_values(['RMSE', 'FDE', 'ADE'], ascending=False).reset_index(drop=True)
+
+    metrics['per_file_metrics'] = per_file_metrics
+
+    if not per_file_metrics.empty and per_file_metrics['month'].notna().any():
+        per_month_metrics = (
+            per_file_metrics
+            .groupby('month', as_index=False)
+            .agg(
+                ADE=('ADE', 'mean'),
+                FDE=('FDE', 'mean'),
+                RMSE=('RMSE', 'mean'),
+                n_tracks=('n_tracks', 'sum'),
+                n_files=('file', 'count'),
+            )
+            .sort_values('RMSE', ascending=False)
+            .reset_index(drop=True)
+        )
+    else:
+        per_month_metrics = pd.DataFrame(columns=['month', 'ADE', 'FDE', 'RMSE', 'n_tracks', 'n_files'])
+
+    metrics['per_month_metrics'] = per_month_metrics
+    return metrics
 
 

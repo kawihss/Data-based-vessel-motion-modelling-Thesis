@@ -119,7 +119,7 @@ def create_interactive_plot(df):
 if __name__ == "__main__":
 
     csv_file = 'output/04_trajectories/train_lock_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-01_12.csv'
-
+    csv_file = 'output/04_trajectories/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-07_01.csv'
 
     if Path(csv_file).exists():
         df = load_data(csv_file)

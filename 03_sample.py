@@ -78,11 +78,16 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
         non_spatial_cols = [c for c in num_cols if c not in spatial_cols]
 
         if spatial_cols:
-            method = 'spline' if len(g) >= 4 else 'time'
-            g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(#we might get a warning for sparse marinecadastra
-            # when points are coliniear. can be ignored, fallback is time interpolation which will work but be less smooth.
-                method= method, order=3
+            # time interpolation is more stable and avoids spline overshoot,
+            # which was introducing artificial y-jumps and sign flips.
+            g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(
+                method='time'
             )
+
+            # method = 'spline' if len(g) >= 4 else 'time'
+            # g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(
+            #     method=method, order=3
+            # )
         if non_spatial_cols:
             g_resampled[non_spatial_cols] = g_resampled[non_spatial_cols].interpolate(
                 method='time'
