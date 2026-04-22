@@ -7,6 +7,15 @@ from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityMode
 from evaluation.evaluator import run_evaluation, plot_horizon_error
 import matplotlib.pyplot as plt
 
+#runner for evaluation. to be replaced by optuna framework
+# Simple global runtime switches
+RUN_CONSTANT_VELOCITY = True
+RUN_CTRV = True
+EVAL_SPLIT = 'test'
+CONTEXT_FILTER = None  # e.g. 'lock' or ['harbour', 'lock']
+EXPORT_PREDICTIONS = True
+SHOW_PLOT = True 
+
 if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     diagnostics_dir = project_root / "evaluation" / "diagnostics"
@@ -14,22 +23,26 @@ if __name__ == "__main__":
     diagnostics_dir.mkdir(parents=True, exist_ok=True)
     model_output_dir.mkdir(parents=True, exist_ok=True)
 
-    models = [
-        ("constant_velocity", "Constant Velocity", ConstantVelocityModel(velocity_fraction=0.4)),
-        ("ctrv", "CTRV", ConstantTurnRateVelocityModel(velocity_fraction=0.4)),
-    ]
+    models = []
+    if RUN_CONSTANT_VELOCITY:
+        models.append(("constant_velocity", "Constant Velocity", ConstantVelocityModel(velocity_fraction=0.4)))
+    if RUN_CTRV:
+        models.append(("ctrv", "CTRV", ConstantTurnRateVelocityModel(velocity_fraction=0.4)))
+
+    if not models:
+        print("No models selected. Set RUN_CONSTANT_VELOCITY and/or RUN_CTRV to True.")
+        raise SystemExit(0)
 
     comparison_rows = []
-    fig = None
-    ax = None
 
     for model_key, model_label, model in models:
         print(f"\n=== Evaluating {model_label} ===")
         metrics = run_evaluation(
             model,
             project_root / "output/05_normalized",
-            split='test',
-            export_predictions=True,
+            split=EVAL_SPLIT,
+            context_filter=CONTEXT_FILTER,
+            export_predictions=EXPORT_PREDICTIONS,
             prediction_output_dir=model_output_dir,
             model_key=model_key,
             model_label=model_label,
@@ -48,14 +61,14 @@ if __name__ == "__main__":
         per_month_metrics = metrics.get('per_month_metrics', pd.DataFrame())
 
         if not per_file_metrics.empty:
-            per_file_path = diagnostics_dir / f"test_metrics_per_file_{model_key}.csv"
+            per_file_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_file_{model_key}.csv"
             per_file_metrics.to_csv(per_file_path, index=False)
             print("\nWorst 10 files by RMSE:")
             print(per_file_metrics.head(10).to_string(index=False))
             print(f"Saved per-file metrics to {per_file_path}")
 
         if not per_month_metrics.empty:
-            per_month_path = diagnostics_dir / f"test_metrics_per_month_{model_key}.csv"
+            per_month_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_month_{model_key}.csv"
             per_month_metrics.to_csv(per_month_path, index=False)
             print("\nMonths sorted by RMSE:")
             print(per_month_metrics.to_string(index=False))
@@ -66,29 +79,40 @@ if __name__ == "__main__":
             print(f"Saved {len(prediction_exports)} prediction file(s) for {model_label} to {model_output_dir}")
             print(prediction_exports.head(5).to_string(index=False))
 
-        # Plot ADE(t) for model on shared axis
-        if fig is None or ax is None:
-            fig, ax = plot_horizon_error(metrics, label=model_label)
-        else:
-            plot_horizon_error(metrics, label=model_label, ax=ax)
+        # Persist ADE_per_step so the plot block below can load it independently
+        ade_per_step = metrics.get('ADE_per_step')
+        if ade_per_step is not None and len(ade_per_step) > 0:
+            ade_path = diagnostics_dir / f"{EVAL_SPLIT}_ade_per_step_{model_key}.csv"
+            pd.DataFrame({'ade': ade_per_step}).to_csv(ade_path, index=False)
+            print(f"Saved ADE_per_step to {ade_path}")
 
     comparison_df = pd.DataFrame(comparison_rows)
-    comparison_path = diagnostics_dir / "test_metrics_model_comparison.csv"
+    comparison_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_model_comparison.csv"
     comparison_df.to_csv(comparison_path, index=False)
     print("\n=== Model comparison ===")
     print(comparison_df.to_string(index=False))
     print(f"Saved model comparison to {comparison_path}")
 
-    if ax is not None:
-        ax.legend()
-    plt.show()
-"""
-Streaming 1968 file(s) for split 'test'
-{'ADE': 151.1338190980579, 'FDE': 472.50075887533666, 'RMSE': 78956.52034362784, 'ADE_per_step': array([ 12.97453588,  28.06489758,  46.22589108,  66.87948312,
-        90.23111604, 117.69888618, 156.99708102, 187.42300146,
-       332.34253974, 472.50075888]), 'n_tracks': 1010821}
-"""
-"""Streaming 1887 file(s) for split 'test'
-{'ADE': 92.74923321505018, 'FDE': 200.20702327876316, 'RMSE': 178.43278622724145, 'ADE_per_step': array([ 10.73234567,  22.71583283,  37.46408122,  54.37784362,
-        73.67363583,  95.00596971, 118.42751695, 143.79687242,
-       171.09121062, 200.20702328]), 'n_tracks': 925583, 'per_file_metrics': """#fixed by adjusting time gap guard to 1.
+    # Separate plot block: reads saved ADE_per_step for ALL known models,
+    # regardless of which were selected for this run.
+    if SHOW_PLOT:
+        ALL_MODEL_LABELS = {
+            "constant_velocity": "Constant Velocity",
+            "ctrv": "CTRV",
+        }
+        fig_p, ax_p = plt.subplots()
+        any_plotted = False
+        for key, label in ALL_MODEL_LABELS.items():
+            ade_path = diagnostics_dir / f"{EVAL_SPLIT}_ade_per_step_{key}.csv"
+            if not ade_path.exists():
+                print(f"No ADE_per_step file for {label}, skipping.")
+                continue
+            ade_values = pd.read_csv(ade_path)['ade'].values
+            plot_horizon_error({'ADE_per_step': ade_values}, label=label, ax=ax_p)
+            any_plotted = True
+        if any_plotted:
+            ax_p.legend()
+            plt.tight_layout()
+            plt.show()
+        else:
+            print("No ADE_per_step files found for plotting.")
