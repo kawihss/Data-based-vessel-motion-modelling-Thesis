@@ -5,6 +5,8 @@
 # Output: output/05_normalized/*.csv + scalers.pkl
 
 # full dataset: NORMALIZED 14,322,040 rows (716,102 tracks)
+# strenger filter NORMALIZED 124,161,280 rows (6,208,064 tracks). wiesomehr?? 
+# alter kommentar aus sample? muss annehmen, dass der alte kommentzar falsch war, lasse es hier als mögliche fehlerquelle stehen
 
 import pandas as pd
 import numpy as np

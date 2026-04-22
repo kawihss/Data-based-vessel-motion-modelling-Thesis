@@ -9,7 +9,7 @@ matplotlib.use('Agg') # prevents segfault on VERA
 #chunking because we had some segfaults when trying to read all the data at once
 #uses only a sample for the plots, but counts all the trajectories for the exact numbers in the bar plot 
 
-
+#factor 1.1
 #Counting raw AIS messages...
 #Total raw messages: 154269746
 #--------------------------------------------------
@@ -31,6 +31,29 @@ matplotlib.use('Agg') # prevents segfault on VERA
 #channel         17
 #--- Wedel ---
 #river    1385134
+
+#with factor 1: acceptable 
+#Counting raw AIS messages...
+#Total raw messages: 154269746
+#Processing final trajectories...
+##Kiel        | Vessels: 40249 | Tracks: 2919666 
+#Bremerhaven | Vessels: 26908 | Tracks: 1955845 
+#Wedel       | Vessels: 14109 | Tracks: 1332553 
+#Distinct Trajectories per Context:
+#--- Kiel ---
+#harbour    2397340
+#channel     470044
+#lock         51534
+#river          748
+#--- Bremerhaven ---
+#harbour    1863012
+#river        70787
+#lock         22023
+#channel         23
+#--- Wedel ---
+#river    1332553
+
+
 
 # Create output folder if it doesn't exist
 os.makedirs("output/06_statistics", exist_ok=True)
