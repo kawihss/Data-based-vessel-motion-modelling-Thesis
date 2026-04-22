@@ -21,15 +21,44 @@ def load_data(source):
     return df
 
 
-def create_interactive_plot(df):
+def load_model_predictions(source_csv, model_output_dir='output/07_model_output'):
+    model_specs = {
+        'constant_velocity': {'label': 'CV Prediction', 'color': '#ff7f0e', 'marker': 'x'},
+        'ctrv': {'label': 'CTRV Prediction', 'color': '#d62728', 'marker': '^'},
+    }
+
+    source_stem = Path(source_csv).stem
+    output_dir = Path(model_output_dir)
+    predictions = {}
+
+    if not output_dir.exists():
+        print(f"Model output folder not found: {output_dir}")
+        return predictions, model_specs
+
+    for model_key in model_specs:
+        pred_path = output_dir / f"{source_stem}__{model_key}.csv"
+        if not pred_path.exists():
+            print(f"No prediction file for {model_key}: {pred_path}")
+            continue
+
+        pred_df = pd.read_csv(pred_path)
+        predictions[model_key] = pred_df
+        print(f"Loaded {len(pred_df):,} rows for {model_key} from {pred_path}")
+
+    return predictions, model_specs
+
+
+def create_interactive_plot(df, model_predictions=None, model_specs=None):
     df = df.sort_values(['track_id', 't_utc']).reset_index(drop=True)
 
     track_ids = sorted(df['track_id'].unique())
     n_tracks = len(track_ids)
 
-    # Precompute colors per track
-    cmap = plt.cm.get_cmap('tab20')
-    track_color = {tid: cmap(i % 20) for i, tid in enumerate(track_ids)}
+    model_predictions = model_predictions or {}
+    model_specs = model_specs or {}
+
+    context_style = {'label': 'Context', 'color': '#1f77b4', 'marker': 'o'}
+    control_style = {'label': 'Ground Truth', 'color': '#2ca02c', 'marker': '*'}
 
     fig, ax = plt.subplots(figsize=(14, 9))
     plt.subplots_adjust(bottom=0.2, left=0.1)
@@ -45,20 +74,42 @@ def create_interactive_plot(df):
         ax.clear()
 
         ctx = track_data[track_data['role'] == 'context']
-        pred = track_data[track_data['role'] == 'prediction']
+        control = track_data[track_data['role'] == 'prediction']
 
-        color = track_color[current_tid]
+        legend_added = False
 
         # Plot context: line + scatter
         if not ctx.empty:
-            ax.plot(ctx['x'], ctx['y'], color=color, alpha=0.7, linewidth=2, zorder=1)
-            ax.scatter(ctx['x'], ctx['y'], color=color, s=40, marker='o',
-                    alpha=0.9, edgecolors='darkblue', linewidth=0.5, zorder=2)
+            ax.plot(ctx['x'], ctx['y'], color=context_style['color'], alpha=0.8, linewidth=2, zorder=1,
+                    label=context_style['label'])
+            ax.scatter(ctx['x'], ctx['y'], color=context_style['color'], s=40, marker=context_style['marker'],
+                       alpha=0.9, edgecolors='darkblue', linewidth=0.5, zorder=2)
+            legend_added = True
 
-        # Plot predictions: stars
-        if not pred.empty:
-            ax.scatter(pred['x'], pred['y'], color=color, s=100, marker='*',
-                    alpha=1.0, edgecolors='black', linewidth=1.0, zorder=3)
+        # Plot control trajectory (ground-truth prediction)
+        if not control.empty:
+            ax.plot(control['x'], control['y'], color=control_style['color'], alpha=0.9, linewidth=2.2, zorder=3,
+                    label=control_style['label'])
+            ax.scatter(control['x'], control['y'], color=control_style['color'], s=90, marker=control_style['marker'],
+                       alpha=1.0, edgecolors='black', linewidth=0.8, zorder=4)
+            legend_added = True
+
+        # Plot model predictions from output/07_model_output
+        for model_key, pred_df in model_predictions.items():
+            style = model_specs.get(model_key, {'label': model_key, 'color': '#9467bd', 'marker': 'x'})
+            model_track = pred_df[pred_df['track_id'] == current_tid].sort_values('pred_step')
+
+            if model_track.empty:
+                continue
+
+            ax.plot(model_track['x_pred'], model_track['y_pred'], color=style['color'], alpha=0.9,
+                    linewidth=2, zorder=5, label=style['label'])
+            ax.scatter(model_track['x_pred'], model_track['y_pred'], color=style['color'], s=65,
+                       marker=style['marker'], alpha=0.95, linewidth=0.8, zorder=6)
+            legend_added = True
+
+        if legend_added:
+            ax.legend(loc='best')
 
         # Labels and formatting
         ax.set_aspect('equal')
@@ -68,15 +119,31 @@ def create_interactive_plot(df):
 
         title = (f'Track ID: {current_tid} | '
                 f'Vessel: {track_data["vessel_id"].iloc[0] if not track_data.empty else "N/A"} | '
-                f'{len(ctx)} context + {len(pred)} prediction points | '
+                f'{len(ctx)} context + {len(control)} control points | '
                 f'Time: {track_data["t_utc"].min().strftime("%H:%M")} - {track_data["t_utc"].max().strftime("%H:%M")}')
         ax.set_title(title, fontsize=13, pad=15)
 
-        # Auto zoom to ALL POINTS in track (ctx + pred) + margin
-        if not track_data.empty:
-            all_x = track_data['x']
-            all_y = track_data['y']
-            x_pad = (all_x.max() - all_x.min()) * 0.15 or 100  # 15% margin
+        # Auto zoom to all visible trajectory points + margin
+        x_series = []
+        y_series = []
+
+        if not ctx.empty:
+            x_series.append(ctx['x'])
+            y_series.append(ctx['y'])
+        if not control.empty:
+            x_series.append(control['x'])
+            y_series.append(control['y'])
+
+        for pred_df in model_predictions.values():
+            model_track = pred_df[pred_df['track_id'] == current_tid]
+            if not model_track.empty:
+                x_series.append(model_track['x_pred'])
+                y_series.append(model_track['y_pred'])
+
+        if x_series and y_series:
+            all_x = pd.concat(x_series, ignore_index=True)
+            all_y = pd.concat(y_series, ignore_index=True)
+            x_pad = (all_x.max() - all_x.min()) * 0.15 or 100
             y_pad = (all_y.max() - all_y.min()) * 0.15 or 100
             ax.set_xlim(all_x.min() - x_pad, all_x.max() + x_pad)
             ax.set_ylim(all_y.min() - y_pad, all_y.max() + y_pad)
@@ -120,10 +187,11 @@ if __name__ == "__main__":
 
     csv_file = 'output/04_trajectories/train_lock_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-01_12.csv'
     csv_file = 'output/04_trajectories/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-07_01.csv' # issues with spline interp
-    csv_file = 'output/04_trajectories/test_river_processed_bremerhaven_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Bremerhaven-2025-02_16.csv' #issues with spline interp
+    #csv_file = 'output/04_trajectories/test_river_processed_bremerhaven_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Bremerhaven-2025-02_16.csv' #issues with spline interp
 
     if Path(csv_file).exists():
         df = load_data(csv_file)
-        create_interactive_plot(df)
+        model_predictions, model_specs = load_model_predictions(csv_file)
+        create_interactive_plot(df, model_predictions=model_predictions, model_specs=model_specs)
     else:
         print(f"ERROR: File not found: {csv_file}")

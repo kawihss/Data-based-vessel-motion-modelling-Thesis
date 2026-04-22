@@ -10,7 +10,9 @@ import matplotlib.pyplot as plt
 if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     diagnostics_dir = project_root / "evaluation" / "diagnostics"
+    model_output_dir = project_root / "output" / "07_model_output"
     diagnostics_dir.mkdir(parents=True, exist_ok=True)
+    model_output_dir.mkdir(parents=True, exist_ok=True)
 
     models = [
         ("constant_velocity", "Constant Velocity", ConstantVelocityModel(velocity_fraction=0.4)),
@@ -23,7 +25,15 @@ if __name__ == "__main__":
 
     for model_key, model_label, model in models:
         print(f"\n=== Evaluating {model_label} ===")
-        metrics = run_evaluation(model, project_root / "output/05_normalized", split='test')
+        metrics = run_evaluation(
+            model,
+            project_root / "output/05_normalized",
+            split='test',
+            export_predictions=True,
+            prediction_output_dir=model_output_dir,
+            model_key=model_key,
+            model_label=model_label,
+        )
         print(metrics)
 
         comparison_rows.append({
@@ -50,6 +60,11 @@ if __name__ == "__main__":
             print("\nMonths sorted by RMSE:")
             print(per_month_metrics.to_string(index=False))
             print(f"Saved per-month metrics to {per_month_path}")
+
+        prediction_exports = metrics.get('prediction_exports', pd.DataFrame())
+        if not prediction_exports.empty:
+            print(f"Saved {len(prediction_exports)} prediction file(s) for {model_label} to {model_output_dir}")
+            print(prediction_exports.head(5).to_string(index=False))
 
         # Plot ADE(t) for model on shared axis
         if fig is None or ax is None:

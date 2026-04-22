@@ -121,6 +121,20 @@ The intended flow after preprocessing is currently:
 5. the metric layer compares prediction and ground truth,
 6. diagnostics are written as tables or plots.
 
+For qualitative trajectory inspection, evaluation runtime now also writes model-predicted trajectories to `output/07_model_output/`.
+Each file in stage 07 corresponds to one normalized source file and one model key:
+
+- `{source_stem}__constant_velocity.csv`
+- `{source_stem}__ctrv.csv`
+
+These files contain per-step predicted positions and matching ground-truth positions for each `track_id`.
+The visualizer in `plots/visualize_trajectory.py` loads these outputs and overlays:
+
+1. context trajectory,
+2. control trajectory (ground-truth future),
+3. CV prediction,
+4. CTRV prediction.
+
 This keeps responsibilities clearly separated:
 
 - preprocessing prepares the data,
@@ -134,4 +148,4 @@ The immediate next implementation steps are:
 2. implement the two planned filters in `models/filters.py`,
 3. add predictions to visualizer
 4. Implement Optuna framework basics
-5. Test op by finding a good threshold to switch between CTRV and CV And find best fraction
+5. Test optuna by finding a good threshold to switch between CTRV and CV And find best fraction as input tothe models o Of course if CTRV is always worse threshold is trivial
