@@ -58,8 +58,9 @@ class ConstantTurnRateVelocityModel(BaselineModel):
         # Fixed sampling interval from preprocessing pipeline
         dt = 30.0
 
-        # Constant turn-rate on displacement vector (direct dx, dy output)
-        dpsi_deg = rot_deg_per_min * (dt / 60.0)
+        # Nautical ROT is clockwise-positive, while math rotation is CCW-positive.
+        # Negating aligns turn direction with the XY rotation matrix below.
+        dpsi_deg = -rot_deg_per_min * (dt / 60.0)
         dpsi_rad = np.deg2rad(dpsi_deg)
         cos_dpsi = np.cos(dpsi_rad)
         sin_dpsi = np.sin(dpsi_rad)
