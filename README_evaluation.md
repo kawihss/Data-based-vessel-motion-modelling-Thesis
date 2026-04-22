@@ -131,6 +131,7 @@ This keeps responsibilities clearly separated:
 
 The immediate next implementation steps are:
 
-1. implement a CTRV model as the next kinematic baseline,
 2. implement the two planned filters in `models/filters.py`,
 3. add predictions to visualizer
+4. Implement Optuna framework basics
+5. Test op by finding a good threshold to switch between CTRV and CV And find best fraction

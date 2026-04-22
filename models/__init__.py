@@ -1,1 +1,1 @@
-from .kinematic import ConstantVelocityModel
+from .kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel
