@@ -56,6 +56,26 @@ def load_tracks(data_dir, split='test', context_filter=None):
                 yield context, pred
 
 
+def load_tracks_cached(data_dir, split='test', context_filter=None):
+    # Materialize tracks in memory once for repeated evaluations (e.g., hyperparameter tuning).
+    files = _resolve_files(data_dir, split, context_filter)
+    print(f"Caching tracks from {len(files)} file(s) for split '{split}'" +
+          (f", context(s) {context_filter}" if context_filter else ""))
+
+    cached_tracks = []
+    for f in files:
+        df = pd.read_csv(f, low_memory=False)
+        for _, group in df.groupby('track_id', sort=False):
+            context = group[group['role'] == 'context']
+            pred = group[group['role'] == 'prediction']
+            if len(context) > 0 and len(pred) > 0:
+                # Copy slices once so repeated trials don't keep dataframe views alive.
+                cached_tracks.append((context.copy(), pred.copy()))
+
+    print(f"Cached {len(cached_tracks)} track(s) in memory")
+    return cached_tracks
+
+
 def load_tracks_from_file(file_path):
     df = pd.read_csv(file_path, low_memory=False)
     for _, group in df.groupby('track_id', sort=False):
@@ -201,6 +221,12 @@ def evaluate_model(model, tracks):
     # Accumulates only small numpy arrays, not full DataFrames, to stay memory efficient.
     # returns dict with ADE, FDE, RMSE, n_tracks
     metrics, _, _ = _evaluate_tracks(model, tracks)
+    return metrics
+
+
+def evaluate_model_cached(model, cached_tracks):
+    # Evaluate using a preloaded list of tracks to avoid repeated file I/O in tuning loops.
+    metrics, _, _ = _evaluate_tracks(model, cached_tracks)
     return metrics
 
 
