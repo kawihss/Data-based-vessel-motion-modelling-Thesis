@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+import time
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
@@ -9,12 +10,13 @@ import optuna
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel
-from evaluation.evaluator import load_tracks_cached, evaluate_model_cached
+from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy
 
 CONTEXT_FILTER = None   # None = all contexts; or e.g. 'lock'
 RUN_CV = True
 RUN_CTRV = True
 N_TRIALS = 20
+ENABLE_TIMING_DIAGNOSTICS = True
 
 
 def _safe_print(print_lock, *args, **kwargs):
@@ -25,11 +27,15 @@ def _safe_print(print_lock, *args, **kwargs):
         print(*args, **kwargs)
 
 
-def make_objective(model_cls, cached_tracks, max_velocity_steps):
+def make_objective(model_cls, cached_tracks, max_velocity_steps, timing_stats=None):
     def objective(trial):
         velocity_steps = trial.suggest_int("velocity_steps", 1, max_velocity_steps)
         model = model_cls(velocity_steps=velocity_steps)
-        metrics = evaluate_model_cached(model, cached_tracks)
+        t0 = time.perf_counter()
+        metrics = evaluate_model_cached_numpy(model, cached_tracks)
+        if timing_stats is not None:
+            timing_stats['eval_calls'] += 1
+            timing_stats['eval_s'] += time.perf_counter() - t0
         return metrics["RMSE"]
     return objective
 
@@ -72,12 +78,16 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
     print_fn = lambda *args, **kwargs: _safe_print(print_lock, *args, **kwargs)
 
     print_fn(f"\n=== {model_label} ===")
-    cached_tracks = load_tracks_cached(data_dir, split='val', context_filter=CONTEXT_FILTER)
+    t_load_start = time.perf_counter()
+    cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
+    load_s = time.perf_counter() - t_load_start
     if not cached_tracks:
         raise ValueError("No tracks available in cache for the selected split/context.")
-    max_velocity_steps = max(len(context_df) - 1 for context_df, _ in cached_tracks)
+    max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
     max_velocity_steps = max(1, int(max_velocity_steps))
     print_fn(f"Cached objective with velocity_steps in [1, {max_velocity_steps}]")
+
+    timing_stats = {'eval_calls': 0, 'eval_s': 0.0}
 
     sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=5, n_ei_candidates=100)
     study = optuna.create_study(
@@ -87,14 +97,20 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
     )
 
     total = N_TRIALS
+    t_trials_start = time.perf_counter()
     for i in range(1, total + 1):
-        study.optimize(make_objective(model_cls, cached_tracks, max_velocity_steps), n_trials=1, n_jobs=1)
+        study.optimize(
+            make_objective(model_cls, cached_tracks, max_velocity_steps, timing_stats=timing_stats),
+            n_trials=1,
+            n_jobs=1,
+        )
         last = study.trials[-1]
         trial_steps = int(last.params["velocity_steps"])
         print_fn(
             f"[{model_key.upper()}] Trial {i:>2}/{total}  "
             f"velocity_steps={trial_steps}  RMSE={last.value:.4f} m"
         )
+    trials_s = time.perf_counter() - t_trials_start
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
     trials_df["model_key"] = model_key
@@ -120,6 +136,17 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
     print_fn(f"  Best velocity_steps   : {best_steps}")
     print_fn(f"  Best val RMSE         : {best_rmse:.4f} m")
     print_fn(f"{'='*50}")
+
+    if ENABLE_TIMING_DIAGNOSTICS:
+        eval_calls = max(1, int(timing_stats['eval_calls']))
+        avg_eval_ms = (timing_stats['eval_s'] / eval_calls) * 1000.0
+        overhead_s = max(0.0, trials_s - timing_stats['eval_s'])
+        print_fn("\nTiming diagnostics:")
+        print_fn(f"  Cache load time        : {load_s:.3f} s")
+        print_fn(f"  Trial loop total       : {trials_s:.3f} s")
+        print_fn(f"  Pure eval time         : {timing_stats['eval_s']:.3f} s")
+        print_fn(f"  Avg eval per trial     : {avg_eval_ms:.1f} ms")
+        print_fn(f"  Sampler/loop overhead  : {overhead_s:.3f} s")
 
     plot_path = diagnostics_dir / f"tuning_{model_key}_val_plot.png"
     plot_results(

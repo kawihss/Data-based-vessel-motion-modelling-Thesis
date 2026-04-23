@@ -16,6 +16,12 @@ class ConstantVelocityModel(BaselineModel):
         x = ctx['x'].values
         y = ctx['y'].values
 
+        return self.predict_from_arrays(x, y, None, n_pred_steps)
+
+    def predict_from_arrays(self, x, y, rot, n_pred_steps):
+        if n_pred_steps <= 0:
+            return np.empty((0, 2), dtype=float)
+
         dx = np.diff(x)
         dy = np.diff(y)
 
@@ -41,13 +47,17 @@ class ConstantTurnRateVelocityModel(BaselineModel):
         self.velocity_steps = velocity_steps
 
     def predict(self, context_df, n_pred_steps):
-        if n_pred_steps <= 0:
-            return np.empty((0, 2), dtype=float)
-
         # Estimate state from raw context sorted by time
         ctx = context_df.sort_values('t_utc')
         x = ctx['x'].values
         y = ctx['y'].values
+        rot = ctx['rot'].values
+
+        return self.predict_from_arrays(x, y, rot, n_pred_steps)
+
+    def predict_from_arrays(self, x, y, rot, n_pred_steps):
+        if n_pred_steps <= 0:
+            return np.empty((0, 2), dtype=float)
 
         dx = np.diff(x)
         dy = np.diff(y)
@@ -58,10 +68,10 @@ class ConstantTurnRateVelocityModel(BaselineModel):
         mean_dx = dx[-n:].mean() if len(dx) > 0 else 0.0
         mean_dy = dy[-n:].mean() if len(dy) > 0 else 0.0
 
-        recent = ctx.iloc[-(n + 1):]
+        recent_rot = np.asarray(rot[-(n + 1):], dtype=float)
 
         # Keep ROT in original deg/min and derive per-step heading increment in degrees
-        rot_deg_per_min = np.nanmean(recent['rot'].values)
+        rot_deg_per_min = np.nanmean(recent_rot)
         if not np.isfinite(rot_deg_per_min):
             rot_deg_per_min = 0.0
 
