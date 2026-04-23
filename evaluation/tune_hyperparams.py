@@ -17,6 +17,14 @@ RUN_CTRV = True
 N_TRIALS = 20
 
 
+def _safe_print(print_lock, *args, **kwargs):
+    if print_lock is None:
+        print(*args, **kwargs)
+        return
+    with print_lock:
+        print(*args, **kwargs)
+
+
 def make_objective(model_cls, cached_tracks, max_velocity_steps):
     def objective(trial):
         velocity_steps = trial.suggest_int("velocity_steps", 1, max_velocity_steps)
@@ -26,7 +34,7 @@ def make_objective(model_cls, cached_tracks, max_velocity_steps):
     return objective
 
 
-def plot_results(df, best_vf, best_rmse, model_label, output_path):
+def plot_results(df, best_vf, best_rmse, model_label, output_path, print_fn=print):
     df_sorted = df.sort_values("params_velocity_fraction")
 
     fig, ax = plt.subplots(figsize=(9, 5))
@@ -56,18 +64,20 @@ def plot_results(df, best_vf, best_rmse, model_label, output_path):
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
-    print(f"Plot saved to {output_path}")
+    print_fn(f"Plot saved to {output_path}")
     plt.close(fig)
 
 
-def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diagnostics_dir):
-    print(f"\n=== {model_label} ===")
+def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diagnostics_dir, print_lock=None):
+    print_fn = lambda *args, **kwargs: _safe_print(print_lock, *args, **kwargs)
+
+    print_fn(f"\n=== {model_label} ===")
     cached_tracks = load_tracks_cached(data_dir, split='val', context_filter=CONTEXT_FILTER)
     if not cached_tracks:
         raise ValueError("No tracks available in cache for the selected split/context.")
     max_velocity_steps = max(len(context_df) - 1 for context_df, _ in cached_tracks)
     max_velocity_steps = max(1, int(max_velocity_steps))
-    print(f"Cached objective with velocity_steps in [1, {max_velocity_steps}]")
+    print_fn(f"Cached objective with velocity_steps in [1, {max_velocity_steps}]")
 
     sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=5, n_ei_candidates=100)
     study = optuna.create_study(
@@ -78,11 +88,13 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
 
     total = N_TRIALS
     for i in range(1, total + 1):
-        print(f"  Trial {i:>2}/{total} ...", end="", flush=True)
         study.optimize(make_objective(model_cls, cached_tracks, max_velocity_steps), n_trials=1, n_jobs=1)
         last = study.trials[-1]
         trial_steps = int(last.params["velocity_steps"])
-        print(f"  velocity_steps={trial_steps}  RMSE={last.value:.4f} m")
+        print_fn(
+            f"[{model_key.upper()}] Trial {i:>2}/{total}  "
+            f"velocity_steps={trial_steps}  RMSE={last.value:.4f} m"
+        )
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
     trials_df["model_key"] = model_key
@@ -90,24 +102,24 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
 
     csv_path = diagnostics_dir / f"tuning_{model_key}_val.csv"
     trials_df.to_csv(csv_path, index=False)
-    print(f"\nTrial table saved to {csv_path}")
+    print_fn(f"\nTrial table saved to {csv_path}")
 
     rmse_counts = trials_df["value"].round(6).value_counts()
     repeated = rmse_counts[rmse_counts > 1]
     if not repeated.empty:
-        print("\nRepeated RMSE values (rounded to 6 dp):")
+        print_fn("\nRepeated RMSE values (rounded to 6 dp):")
         for rmse_value, count in repeated.items():
-            print(f"  RMSE={rmse_value:.6f} appears {int(count)}x")
+            print_fn(f"  RMSE={rmse_value:.6f} appears {int(count)}x")
 
     best = study.best_trial
     best_steps = int(best.params["velocity_steps"])
     best_rmse = float(best.value)
 
-    print(f"\n{'='*50}")
-    print(f"  Model                 : {model_label}")
-    print(f"  Best velocity_steps   : {best_steps}")
-    print(f"  Best val RMSE         : {best_rmse:.4f} m")
-    print(f"{'='*50}")
+    print_fn(f"\n{'='*50}")
+    print_fn(f"  Model                 : {model_label}")
+    print_fn(f"  Best velocity_steps   : {best_steps}")
+    print_fn(f"  Best val RMSE         : {best_rmse:.4f} m")
+    print_fn(f"{'='*50}")
 
     plot_path = diagnostics_dir / f"tuning_{model_key}_val_plot.png"
     plot_results(
@@ -116,6 +128,7 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
         best_rmse=best_rmse,
         model_label=model_label,
         output_path=plot_path,
+        print_fn=print_fn,
     )
 
     return {
@@ -128,13 +141,14 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
     }, trials_df
 
 
-def _run_model_job(result_queue, model_key, model_label, model_cls, data_dir, diagnostics_dir):
+def _run_model_job(result_queue, print_lock, model_key, model_label, model_cls, data_dir, diagnostics_dir):
     best_row, trials_df = run_optimization_for_model(
         model_key=model_key,
         model_label=model_label,
         model_cls=model_cls,
         data_dir=data_dir,
         diagnostics_dir=diagnostics_dir,
+        print_lock=print_lock,
     )
     result_queue.put((best_row, trials_df))
 
@@ -164,6 +178,7 @@ if __name__ == "__main__":
     all_trials = []
 
     result_queue = mp.Queue()
+    print_lock = mp.Lock()
     processes = []
 
     for model_key, model_label, model_cls in jobs:
@@ -171,6 +186,7 @@ if __name__ == "__main__":
             target=_run_model_job,
             args=(
                 result_queue,
+                print_lock,
                 model_key,
                 model_label,
                 model_cls,
