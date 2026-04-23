@@ -11,6 +11,9 @@ from pathlib import Path
 def load_data(source):
     if isinstance(source, pd.DataFrame):
         df = source.copy()
+    elif Path(source).suffix == '.parquet':
+        df = pd.read_parquet(source)
+        df['t_utc'] = pd.to_datetime(df['t_utc'])
     else:
         df = pd.read_csv(source)
         df['t_utc'] = pd.to_datetime(df['t_utc'])
@@ -21,13 +24,13 @@ def load_data(source):
     return df
 
 
-def load_model_predictions(source_csv, model_output_dir='output/07_model_output'):
+def load_model_predictions(source_file, model_output_dir='output/08_baseline_results/model_output'):
     model_specs = {
         'constant_velocity': {'label': 'CV Prediction', 'color': '#ff7f0e', 'marker': 'x'},
         'ctrv': {'label': 'CTRV Prediction', 'color': '#d62728', 'marker': '^'},
     }
 
-    source_stem = Path(source_csv).stem
+    source_stem = Path(source_file).stem
     output_dir = Path(model_output_dir)
     predictions = {}
 
@@ -42,6 +45,8 @@ def load_model_predictions(source_csv, model_output_dir='output/07_model_output'
             continue
 
         pred_df = pd.read_csv(pred_path)
+        if 'track_id' in pred_df.columns:
+            pred_df['track_id'] = pred_df['track_id'].astype('int64')
         predictions[model_key] = pred_df
         print(f"Loaded {len(pred_df):,} rows for {model_key} from {pred_path}")
 
@@ -185,13 +190,14 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
 
 if __name__ == "__main__":
 
-    csv_file = 'output/04_trajectories/train_lock_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-01_12.csv'
-    csv_file = 'output/04_trajectories/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-07_01.csv' # issues with spline interp
-    #csv_file = 'output/04_trajectories/test_river_processed_bremerhaven_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Bremerhaven-2025-02_16.csv' #issues with spline interp
+    # Point to a parquet file in output/07_parquet/ (stem must match the prediction output filenames)
+    source_file = 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-01_02.parquet'
+    #source_file = 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-07_01.parquet'
+    #source_file = 'output/07_parquet/test_river_processed_bremerhaven_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Bremerhaven-2025-02_16.parquet'
 
-    if Path(csv_file).exists():
-        df = load_data(csv_file)
-        model_predictions, model_specs = load_model_predictions(csv_file)
+    if Path(source_file).exists():
+        df = load_data(source_file)
+        model_predictions, model_specs = load_model_predictions(source_file)
         create_interactive_plot(df, model_predictions=model_predictions, model_specs=model_specs)
     else:
-        print(f"ERROR: File not found: {csv_file}")
+        print(f"ERROR: File not found: {source_file}")
