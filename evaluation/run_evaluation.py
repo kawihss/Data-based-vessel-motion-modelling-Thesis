@@ -58,8 +58,9 @@ def _load_best_velocity_steps(diagnostics_dir):
 
 if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
-    diagnostics_dir = project_root / "evaluation" / "diagnostics"
-    model_output_dir = project_root / "output" / "07_model_output"
+    baseline_output_dir = project_root / "output" / "08_baseline_results"
+    diagnostics_dir = baseline_output_dir / "diagnostics"
+    model_output_dir = baseline_output_dir / "model_output"
     diagnostics_dir.mkdir(parents=True, exist_ok=True)
     model_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -86,7 +87,7 @@ if __name__ == "__main__":
         print(f"\n=== Evaluating {model_label} ===")
         metrics = run_evaluation(
             model,
-            project_root / "output/05_normalized",
+            project_root / "output/07_parquet",
             split=EVAL_SPLIT,
             context_filter=CONTEXT_FILTER,
             export_predictions=EXPORT_PREDICTIONS,

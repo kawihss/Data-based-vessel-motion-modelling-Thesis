@@ -184,7 +184,7 @@ if __name__ == "__main__":
     import multiprocessing as mp
 
     project_root = Path(__file__).resolve().parent.parent
-    data_dir = project_root / "output" / "05_normalized"
+    data_dir = project_root / "output" / "07_parquet"
     diagnostics_dir = project_root / "evaluation" / "diagnostics"
     diagnostics_dir.mkdir(parents=True, exist_ok=True)
 

@@ -149,3 +149,35 @@ The immediate next implementation steps are:
 3. add predictions to visualizer
 4. Implement Optuna framework basics
 5. Test optuna by finding a good threshold to switch between CTRV and CV And find best fraction as input tothe models o Of course if CTRV is always worse threshold is trivial
+
+\optimiert vor parquet
+Timing diagnostics:
+  Cache load time        : 3.122 s
+  Trial loop total       : 2.165 s
+  Pure eval time         : 2.124 s
+  Avg eval per trial     : 106.2 ms
+  Sampler/loop overhead  : 0.042 s
+
+  with parquet
+  Timing diagnostics:
+  Cache load time        : 2.324 s
+  Trial loop total       : 2.384 s
+  Pure eval time         : 2.337 s
+  Avg eval per trial     : 116.8 ms
+  Sampler/loop overhead  : 0.047 s
+
+with dtzpe
+iming diagnostics:
+  Cache load time        : 3.366 s
+  Trial loop total       : 2.500 s
+  Pure eval time         : 2.455 s
+  Avg eval per trial     : 122.7 ms
+  Sampler/loop overhead  : 0.045 s
+
+  now
+  Timing diagnostics:
+  Cache load time        : 2.983 s
+  Trial loop total       : 2.357 s
+  Pure eval time         : 2.312 s
+  Avg eval per trial     : 115.6 ms
+  Sampler/loop overhead  : 0.045 s

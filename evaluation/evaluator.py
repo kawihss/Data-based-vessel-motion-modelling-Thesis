@@ -12,15 +12,6 @@ CONTEXT_LABELS = {'river', 'channel', 'harbour', 'lock', 'unknown'}
 MONTH_PATTERN = re.compile(r"(\d{4})-(\d{2})_\d{2}$")
 
 TRACK_USECOLS = ['track_id', 'role', 't_utc', 'x', 'y', 'rot', 'vessel_id', 'context']
-TRACK_DTYPES = {
-    'track_id': 'int64',
-    'role': 'category',
-    'x': 'float32',
-    'y': 'float32',
-    'rot': 'float32',
-    'vessel_id': 'string',
-    'context': 'category',
-}
 
 
 def _resolve_files(data_dir, split, context_filter):
@@ -28,17 +19,20 @@ def _resolve_files(data_dir, split, context_filter):
     if context_filter is not None:
         if isinstance(context_filter, str):
             context_filter = [context_filter]
-        patterns = [f"{split}_{ctx}_*.csv" for ctx in context_filter]
+        base_patterns = [f"{split}_{ctx}_*" for ctx in context_filter]
     else:
-        patterns = [f"{split}_*.csv"]
+        base_patterns = [f"{split}_*"]
 
-    files = []
-    for pattern in patterns:
-        files.extend(sorted(data_dir.glob(pattern)))
+    selected_files = []
+    for base_pattern in base_patterns:
+        selected_files.extend(sorted(data_dir.glob(f"{base_pattern}.parquet")))
 
-    if not files:
-        raise FileNotFoundError(f"No files found for split '{split}' in {data_dir}")
-    return files
+    if not selected_files:
+        raise FileNotFoundError(
+            f"No parquet files found for split '{split}' in {data_dir}. "
+            "Run step 07_generate_parquet.py first."
+        )
+    return selected_files
 
 
 def _extract_month_label(file_path):
@@ -51,12 +45,13 @@ def _extract_month_label(file_path):
 
 
 def _read_track_file(file_path):
-    return pd.read_csv(
-        file_path,
-        usecols=TRACK_USECOLS,
-        dtype=TRACK_DTYPES,
-        low_memory=False,
-    )
+    file_path = Path(file_path)
+    suffix = file_path.suffix.lower()
+
+    if suffix == '.parquet':
+        return pd.read_parquet(file_path, columns=TRACK_USECOLS)
+
+    raise ValueError(f"Unsupported file type for track loading: {file_path}")
 
 
 def _iter_track_groups(df, with_track_id=False):
@@ -348,6 +343,49 @@ def benchmark_loading(data_dir, split='val', context_filter=None, repeats=3):
     return pd.DataFrame(rows)
 
 
+def benchmark_median_runtime(
+    data_dir,
+    split='val',
+    context_filter=None,
+    repeats=5,
+    velocity_steps=5,
+):
+    rows = []
+    for i in range(repeats):
+        t0 = time.perf_counter()
+        tracks_np = load_tracks_cached_numpy(data_dir, split=split, context_filter=context_filter)
+        t1 = time.perf_counter()
+
+        model = ConstantVelocityModel(velocity_steps=velocity_steps)
+        evaluate_model_cached_numpy(model, tracks_np)
+        t2 = time.perf_counter()
+
+        rows.append({
+            'run': i + 1,
+            'n_tracks': len(tracks_np),
+            'load_s': t1 - t0,
+            'eval_s': t2 - t1,
+            'total_s': t2 - t0,
+        })
+
+    df = pd.DataFrame(rows)
+    summary = {
+        'load_median_s': float(df['load_s'].median()),
+        'eval_median_s': float(df['eval_s'].median()),
+        'total_median_s': float(df['total_s'].median()),
+        'n_tracks': int(df['n_tracks'].median()),
+    }
+
+    print('Median runtime benchmark')
+    print(f"  Runs              : {repeats}")
+    print(f"  Tracks            : {summary['n_tracks']}")
+    print(f"  Load median       : {summary['load_median_s']:.3f} s")
+    print(f"  Eval median       : {summary['eval_median_s']:.3f} s")
+    print(f"  Total median      : {summary['total_median_s']:.3f} s")
+
+    return df, summary
+
+
 def evaluate_file_metrics(model, data_dir, split='test', context_filter=None):
     files = _resolve_files(data_dir, split, context_filter)
     rows = []
@@ -391,7 +429,7 @@ def run_evaluation(
     model_label=None,
 ):
     # wrapper: load all files for a split and evaluate.
-    # data_dir: path to output/05_normalized/
+    # data_dir: path to output/07_parquet/
     # split: 'train', 'val', or 'test' (kinematic models always use 'test')
     # context_filter: str or list of str, e.g. 'lock', 'harbour', ['river', 'channel']
     #   None = evaluate on all contexts
@@ -400,7 +438,7 @@ def run_evaluation(
     #   def objective(trial):
     #       frac = trial.suggest_float('velocity_fraction', 0.1, 1.0)
     #       model = ConstantVelocityModel(velocity_fraction=frac)
-    #       return run_evaluation(model, 'output/05_normalized', context_filter='lock')['ADE']
+    #       return run_evaluation(model, 'output/07_parquet', context_filter='lock')['ADE']
     files = _resolve_files(data_dir, split, context_filter)
     print(f"Streaming {len(files)} file(s) for split '{split}'" +
           (f", context(s) {context_filter}" if context_filter else ""))

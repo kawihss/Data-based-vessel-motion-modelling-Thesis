@@ -16,6 +16,7 @@ shapely
 scikit-learn
 matplotlib
 seaborn
+pyarrow
 
 
 torch

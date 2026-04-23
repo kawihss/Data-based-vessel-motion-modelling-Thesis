@@ -17,12 +17,12 @@ The pipeline is compatible with both Windows and Linux-based operating systems. 
 1. **Install Dependencies:** Install the required Python packages by running `pip install -r requirements.txt`.
 2. **Limit Data Extraction:** Open `01_extract.py` and change the limit parameter at the top to a small number (e.g., `TEST_LIMIT = 5`). This ensures the script only processes a few files per dataset.
 3. **Download Sample Data:** Execute `python 00_download.py` to download the full dataset, or manually select some files by following the links you can find in the script and download them into the `Data/` directories.
-4. **Run Pipeline:** Execute `python 00_full_preprocessing_pipeline.py`. This master script will clear old outputs and sequentially run steps 01 through 05, or run the full preprocessing pipeline from the starting point you specify with START_AT_STEP.
+4. **Run Pipeline:** Execute `python 00_full_preprocessing_pipeline.py`. This master script will clear old outputs and sequentially run steps 01 through 07, or run the full preprocessing pipeline from the starting point you specify with START_AT_STEP.
 
 
 ## Pipeline Architecture
 
-The preprocessing is divided into six steps:
+The preprocessing is divided into seven steps:
 
 * **Step 0** (`00_download.py`): Fetches the raw 2025 AIS XML feeds for Kiel, Bremerhaven, and Wedel from GovData.
 * **Step 1** (`01_extract.py`): Parses raw semicolon-delimited logs, filtering for dynamic position message types and valid MMSIs.
@@ -30,6 +30,7 @@ The preprocessing is divided into six steps:
 * **Step 3** (`03_sample.py`): Resamples the data to a uniform 30-second temporal grid using spline and linear interpolation, and analytically derives the Rate of Turn (ROT).
 * **Step 4** (`04_track_segmentation.py`): Segments continuous tracks using a 5-minute context and 5-minute prediction sliding window. Applies a stratified train/validation/test split at the vessel level and augments minority context classes.
 * **Step 5** (`05_normalize.py`): Computes relative displacements, circular COG encodings, and applies Z-score normalization using a scaler fitted exclusively on the training partition.
+* **Step 7** (`07_generate_parquet.py`): Converts normalized split CSV files from `output/05_normalized/` into Parquet files in `output/07_parquet/` for faster downstream loading.
 * **Evaluation** (`06_statistics.py`): Generates feature distributions, trajectory counts, and polar COG heatmaps used in the thesis.
 
 ## Key Configuration Parameters

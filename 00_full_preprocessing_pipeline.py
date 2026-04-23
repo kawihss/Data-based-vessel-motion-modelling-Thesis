@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 
-START_AT_STEP = 4   # Choose 1-5
+START_AT_STEP = 4   # Choose 1-6
 CLEAR_OUTPUTS = True # Clears folders for active steps
 
 STEPS = [
@@ -15,7 +15,8 @@ STEPS = [
     ("02_clean.py", "output/01_raw/", "output/02_cleaned/"),
     ("03_sample.py", "output/02_cleaned/", "output/03_sampled/"),
     ("04_track_segmentation.py", "output/03_sampled/", "output/04_trajectories/"),
-    ("05_normalize.py", "output/04_trajectories/", "output/05_normalized/")
+    ("05_normalize.py", "output/04_trajectories/", "output/05_normalized/"),
+    ("07_generate_parquet.py", "output/05_normalized/", "output/07_parquet/")
 ]
 
 def run_script(script_name: str):
@@ -38,12 +39,12 @@ if __name__ == "__main__":
     
     # Step 0: Optional Cleanup
     if CLEAR_OUTPUTS:
-        for i in range(START_AT_STEP, len(STEPS) + 1):
-            for step_dir in output_base.glob(f"0{i}*"):# directories starting with 01, 02, etc.
-                if step_dir.is_dir():
-                    for file in step_dir.glob("*"):
-                        file.unlink()
-                    print(f"   Cleared {step_dir.name}")
+        for i in range(START_AT_STEP - 1, len(STEPS)):
+            step_output = Path(STEPS[i][2])
+            if step_output.is_dir():
+                for file in step_output.glob("*"):
+                    file.unlink()
+                print(f"   Cleared {step_output.name}")
     
     timings = {}
     for i in range(START_AT_STEP - 1, len(STEPS)):
