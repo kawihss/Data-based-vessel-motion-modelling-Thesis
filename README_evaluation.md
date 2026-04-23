@@ -1,183 +1,121 @@
-# Evaluation Framework and Model Architecture
+# Evaluation Framework and Current Workflow
 
->This file is not user-ready and only documents the current state at a high level.
-
+This document describes the current evaluation and hyperparameter tuning state for the baseline motion models.
 
 ## Position in the Pipeline
 
-The preprocessing pipeline ends with normalized context/prediction windows in `output/05_normalized/`. From that point on, the repository moves into the model and evaluation stage.
+After preprocessing, evaluation consumes windowed trajectory data and produces:
 
-Conceptually, this stage is split into two parts:
+1. aggregate metrics (ADE, FDE, RMSE),
+2. per-file and per-month diagnostics,
+3. optional prediction exports for visual inspection.
 
-1. `models/` contains prediction models and the places where additional model families will be added.
-2. `evaluation/` contains data loading, prediction execution, metric computation, and diagnostic output.
+Current runtime data paths:
 
-The idea is simple: preprocessing standardizes the data, and the evaluation framework measures how well a model predicts on those standardized samples.
+- tuning input: `output/07_parquet/`
+- final baseline evaluation input: `output/07_parquet/`
+- baseline outputs: `output/08_baseline_results/`
 
-## Object-Oriented Approach
-
-The current OOP structure is intentionally simple:
-
-- `models/base_model.py` defines the shared abstraction through `BaselineModel`.
-- Concrete models inherit from that base class and implement `predict(...)`.
-- The evaluator does not depend on model internals. It only expects a compatible model object.
-
-This keeps evaluation tied to a stable interface rather than to one specific implementation. That is the key requirement if the project later grows from simple baselines to filter-based or learned sequence models.
-
-## Current State of `models/`
-
-At the moment, the model layer is more of a scaffold than a finished framework.
+## Model Layer
 
 ### `models/base_model.py`
 
-`BaselineModel` is the common parent class. Right now it mainly stores the model name and defines the expectation that child classes implement `predict(...)`.
-
-This is the main extension point for everything that will be added later.
+`BaselineModel` is the common interface. Evaluator logic is model-agnostic and only depends on `predict(context_df, n_pred_steps)`.
 
 ### `models/kinematic.py`
 
-This file currently contains the only concrete model: `ConstantVelocityModel`.
+Current baseline models:
 
+- `ConstantVelocityModel`
+- `ConstantTurnRateVelocityModel` (CTRV)
 
-- sort the context track by time,
-- compute recent displacements from `x` and `y`,
-- average the last fraction of those steps,
-- repeat that mean displacement across the prediction horizon.
+Both models use one parameterization mode:
 
+1. `velocity_steps` (integer number of recent context steps to average).
 
-### `models/filters.py`
-
- Kalman Filter / Extended Kalman Filter variants with CV or CTRV dynamics may later be implemented.
-
-
-### `models/sequence/`
-
-
-
-## Current State of `evaluation/`
-
-The evaluation package is already more concrete than the model package. This is where the reusable execution and metric logic currently lives.
+## Evaluation Layer
 
 ### `evaluation/metrics.py`
 
-This module contains the core trajectory metrics:
+Provides trajectory quality metrics:
 
-- `ADE`: average displacement error across all tracks and all prediction steps,
-- `FDE`: displacement error at the final prediction step,
-- `RMSE`: root mean squared error over reconstructed positions,
-- `ADE_per_step`: error development over the prediction horizon.
-
-It also provides a helper for plotting the ADE curve over time. 
+- ADE
+- FDE
+- RMSE
+- ADE per prediction step
 
 ### `evaluation/evaluator.py`
 
-This is the central orchestration module.
+Core responsibilities:
 
-Its current responsibilities are:
+- resolve files by split/context,
+- load and group tracks,
+- call model prediction,
+- reconstruct positions,
+- aggregate metrics,
+- return diagnostic tables.
 
-- locating normalized data files by split and optional context filter,
-- streaming tracks from CSV files instead of loading the full dataset at once,
-- separating grouped tracks into context and prediction parts,
-- calling `model.predict(context_df, n_pred_steps)`,
-- reconstructing absolute future positions from predicted displacements,
-- aggregating metrics across tracks, files, and months.
+Two execution modes are currently available:
 
-An important detail is that the evaluator is already designed to be relatively memory-efficient. It processes one file and one track at a time and only keeps the smaller arrays needed for metric computation.
+1. streaming mode (file-by-file),
+2. cached numpy mode for fast repeated evaluation during tuning.
 
-The module exposes several entry points with slightly different purposes:
+Cached mode is used by Optuna tuning to avoid repeated disk I/O per trial.
 
-- `evaluate_model(...)` for aggregate evaluation only,
-- `evaluate_file_metrics(...)` for per-file reporting,
-- `run_evaluation(...)` as the broader wrapper including per-file and per-month diagnostics,
-- `plot_horizon_error(...)` as a convenience wrapper for the horizon plot.
+## Hyperparameter Tuning (Optuna)
 
-This is the main layer between the processed data and the models.
+### `evaluation/tune_hyperparams.py`
+
+Purpose:
+
+- tune `velocity_steps` on the **validation split** for CV and CTRV.
+
+Current behavior:
+
+1. loads cached numpy tracks from `output/07_parquet/` (validation split),
+2. runs Optuna TPE optimization per model,
+3. prints per-trial RMSE,
+4. writes trial CSVs and summary CSV,
+5. writes RMSE-vs-`velocity_steps` plot per model.
+
+Outputs:
+
+- `evaluation/diagnostics/tuning_cv_val.csv`
+- `evaluation/diagnostics/tuning_ctrv_val.csv`
+- `evaluation/diagnostics/tuning_best_params_val.csv`
+- `evaluation/diagnostics/tuning_all_trials_val.csv`
+- `evaluation/diagnostics/tuning_cv_val_plot.png`
+- `evaluation/diagnostics/tuning_ctrv_val_plot.png`
+
+Important split policy:
+
+- validation is for parameter selection,
+- test is only for final reporting.
+
+## Final Baseline Evaluation (Test)
 
 ### `evaluation/run_evaluation.py`
 
-This file currently serves as the executable example of the intended workflow.
+Purpose:
 
-The current flow is:
+- run final metrics on test split for selected models,
+- export diagnostics and optional prediction trajectories.
 
-1. instantiate a model,
-2. point the evaluator to `output/05_normalized`,
-3. run evaluation on a split,
-4. inspect or export metrics and diagnostics.
+Current behavior:
 
-In its current form, this script documents the practical workflow better than any external documentation.
+1. tries to load tuned parameters from `tuning_best_params_val.csv`,
+2. falls back to defaults if tuning summary is missing,
+3. evaluates on configured split (default: `test`),
+4. writes outputs under `output/08_baseline_results/`.
 
-### `evaluation/diagnostics/`
+Current baseline output structure:
 
-This directory is intended to store generated evaluation artifacts such as per-file and per-month metric tables.
+- diagnostics: `output/08_baseline_results/diagnostics/`
+- prediction exports: `output/08_baseline_results/model_output/`
 
-## Data Flow After Preprocessing
+## Recommended Usage Sequence
 
-The intended flow after preprocessing is currently:
-
-1. preprocessing writes normalized segments to `output/05_normalized/`,
-2. a model consumes the context portion of a track,
-3. the model returns predicted displacements for the prediction horizon,
-4. the evaluator reconstructs absolute target positions,
-5. the metric layer compares prediction and ground truth,
-6. diagnostics are written as tables or plots.
-
-For qualitative trajectory inspection, evaluation runtime now also writes model-predicted trajectories to `output/07_model_output/`.
-Each file in stage 07 corresponds to one normalized source file and one model key:
-
-- `{source_stem}__constant_velocity.csv`
-- `{source_stem}__ctrv.csv`
-
-These files contain per-step predicted positions and matching ground-truth positions for each `track_id`.
-The visualizer in `plots/visualize_trajectory.py` loads these outputs and overlays:
-
-1. context trajectory,
-2. control trajectory (ground-truth future),
-3. CV prediction,
-4. CTRV prediction.
-
-This keeps responsibilities clearly separated:
-
-- preprocessing prepares the data,
-- models generate forecasts,
-- evaluation measures prediction quality.
-
-## Next Steps
-
-The immediate next implementation steps are:
-
-2. implement the two planned filters in `models/filters.py`,
-3. add predictions to visualizer
-4. Implement Optuna framework basics
-5. Test optuna by finding a good threshold to switch between CTRV and CV And find best fraction as input tothe models o Of course if CTRV is always worse threshold is trivial
-
-\optimiert vor parquet
-Timing diagnostics:
-  Cache load time        : 3.122 s
-  Trial loop total       : 2.165 s
-  Pure eval time         : 2.124 s
-  Avg eval per trial     : 106.2 ms
-  Sampler/loop overhead  : 0.042 s
-
-  with parquet
-  Timing diagnostics:
-  Cache load time        : 2.324 s
-  Trial loop total       : 2.384 s
-  Pure eval time         : 2.337 s
-  Avg eval per trial     : 116.8 ms
-  Sampler/loop overhead  : 0.047 s
-
-with dtzpe
-iming diagnostics:
-  Cache load time        : 3.366 s
-  Trial loop total       : 2.500 s
-  Pure eval time         : 2.455 s
-  Avg eval per trial     : 122.7 ms
-  Sampler/loop overhead  : 0.045 s
-
-  now
-  Timing diagnostics:
-  Cache load time        : 2.983 s
-  Trial loop total       : 2.357 s
-  Pure eval time         : 2.312 s
-  Avg eval per trial     : 115.6 ms
-  Sampler/loop overhead  : 0.045 s
+1. run `evaluation/tune_hyperparams.py` on validation,
+2. verify `tuning_best_params_val.csv`,
+3. run `evaluation/run_evaluation.py` on test,
+4. compare final model metrics from the model comparison CSV.

@@ -436,8 +436,8 @@ def run_evaluation(
     #
     # Optuna objective example (lock-specific):
     #   def objective(trial):
-    #       frac = trial.suggest_float('velocity_fraction', 0.1, 1.0)
-    #       model = ConstantVelocityModel(velocity_fraction=frac)
+    #       steps = trial.suggest_int('velocity_steps', 1, 9)
+    #       model = ConstantVelocityModel(velocity_steps=steps)
     #       return run_evaluation(model, 'output/07_parquet', context_filter='lock')['ADE']
     files = _resolve_files(data_dir, split, context_filter)
     print(f"Streaming {len(files)} file(s) for split '{split}'" +

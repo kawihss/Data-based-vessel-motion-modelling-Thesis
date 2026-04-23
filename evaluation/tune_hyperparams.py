@@ -40,12 +40,12 @@ def make_objective(model_cls, cached_tracks, max_velocity_steps, timing_stats=No
     return objective
 
 
-def plot_results(df, best_vf, best_rmse, model_label, output_path, print_fn=print):
-    df_sorted = df.sort_values("params_velocity_fraction")
+def plot_results(df, best_steps, best_rmse, model_label, output_path, print_fn=print):
+    df_sorted = df.sort_values("params_velocity_steps")
 
     fig, ax = plt.subplots(figsize=(9, 5))
     ax.plot(
-        df_sorted["params_velocity_fraction"],
+        df_sorted["params_velocity_steps"],
         df_sorted["value"],
         marker="o",
         linewidth=1.8,
@@ -53,19 +53,19 @@ def plot_results(df, best_vf, best_rmse, model_label, output_path, print_fn=prin
         color="steelblue",
         label="Val RMSE",
     )
-    ax.axvline(best_vf, color="crimson", linestyle="--", linewidth=1.5,
-               label=f"Best k={best_vf:.4f}  (RMSE={best_rmse:.4f} m)")
+    ax.axvline(best_steps, color="crimson", linestyle="--", linewidth=1.5,
+               label=f"Best velocity_steps={best_steps}  (RMSE={best_rmse:.4f} m)")
     ax.annotate(
-        f"k={best_vf:.4f}\nRMSE={best_rmse:.4f} m",
-        xy=(best_vf, best_rmse),
-        xytext=(best_vf + 0.05, best_rmse + (df_sorted["value"].max() - df_sorted["value"].min()) * 0.08),
+        f"velocity_steps={best_steps}\nRMSE={best_rmse:.4f} m",
+        xy=(best_steps, best_rmse),
+        xytext=(best_steps + 0.2, best_rmse + (df_sorted["value"].max() - df_sorted["value"].min()) * 0.08),
         arrowprops=dict(arrowstyle="->", color="crimson"),
         fontsize=9,
         color="crimson",
     )
-    ax.set_xlabel("velocity_fraction  (k – fraction of context steps averaged)", fontsize=11)
+    ax.set_xlabel("velocity_steps  (number of recent context steps averaged)", fontsize=11)
     ax.set_ylabel("Validation RMSE  [m]", fontsize=11)
-    ax.set_title(f"{model_label} - Hyperparameter Grid Search\nVal-split RMSE vs velocity_fraction", fontsize=12)
+    ax.set_title(f"{model_label} - Hyperparameter Optimization\nVal-split RMSE vs velocity_steps", fontsize=12)
     ax.legend()
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
@@ -150,8 +150,8 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
 
     plot_path = diagnostics_dir / f"tuning_{model_key}_val_plot.png"
     plot_results(
-        df=trials_df.rename(columns={"params_velocity_steps": "params_velocity_fraction"}),
-        best_vf=float(best_steps),
+        df=trials_df,
+        best_steps=best_steps,
         best_rmse=best_rmse,
         model_label=model_label,
         output_path=plot_path,

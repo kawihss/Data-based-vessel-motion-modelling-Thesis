@@ -3,11 +3,9 @@ from .base_model import BaselineModel
 
 
 class ConstantVelocityModel(BaselineModel):
-    def __init__(self, velocity_fraction=0.4, velocity_steps=None):
+    def __init__(self, velocity_steps=1):
         super().__init__("ConstantVelocity")
-        # Fraction of recent context steps to average for velocity estimate (e.g. 0.05 for last 5%)
-        self.velocity_fraction = velocity_fraction
-        # Optional direct window size for velocity averaging (overrides velocity_fraction when set)
+        # Number of recent context steps used for velocity averaging.
         self.velocity_steps = velocity_steps
 
     def predict(self, context_df, n_pred_steps):
@@ -25,11 +23,7 @@ class ConstantVelocityModel(BaselineModel):
         dx = np.diff(x)
         dy = np.diff(y)
 
-        # Use direct velocity_steps when provided, else derive from velocity_fraction.
-        if self.velocity_steps is not None:
-            n = max(1, min(len(dx), int(self.velocity_steps)))
-        else:
-            n = max(1, int(np.ceil(len(dx) * self.velocity_fraction)))
+        n = max(1, min(len(dx), int(self.velocity_steps)))
         mean_dx = dx[-n:].mean() if n > 0 else 0.0
         mean_dy = dy[-n:].mean() if n > 0 else 0.0
 
@@ -39,11 +33,9 @@ class ConstantVelocityModel(BaselineModel):
 
 
 class ConstantTurnRateVelocityModel(BaselineModel):
-    def __init__(self, velocity_fraction=0.4, velocity_steps=None):
+    def __init__(self, velocity_steps=1):
         super().__init__("CTRV")
-        # Fraction of recent context steps used to estimate displacement and turn rate
-        self.velocity_fraction = velocity_fraction
-        # Optional direct window size for displacement/turn-rate averaging (overrides velocity_fraction when set)
+        # Number of recent context steps used to estimate displacement and turn rate.
         self.velocity_steps = velocity_steps
 
     def predict(self, context_df, n_pred_steps):
@@ -61,10 +53,7 @@ class ConstantTurnRateVelocityModel(BaselineModel):
 
         dx = np.diff(x)
         dy = np.diff(y)
-        if self.velocity_steps is not None:
-            n = max(1, min(len(dx), int(self.velocity_steps)))
-        else:
-            n = max(1, int(np.ceil(len(dx) * self.velocity_fraction)))
+        n = max(1, min(len(dx), int(self.velocity_steps)))
         mean_dx = dx[-n:].mean() if len(dx) > 0 else 0.0
         mean_dy = dy[-n:].mean() if len(dy) > 0 else 0.0
 

@@ -32,14 +32,9 @@ def _load_best_velocity_steps(diagnostics_dir):
         print("Tuning summary missing 'model_key' column; using fallback defaults.")
         return {}
 
-    step_col = None
-    for candidate in ("best_velocity_steps", "best_velocity_fraction"):
-        if candidate in df.columns:
-            step_col = candidate
-            break
-
-    if step_col is None:
-        print("Tuning summary missing best parameter column; using fallback defaults.")
+    step_col = "best_velocity_steps"
+    if step_col not in df.columns:
+        print("Tuning summary missing 'best_velocity_steps' column; using fallback defaults.")
         return {}
 
     best_values = {}
@@ -59,17 +54,18 @@ def _load_best_velocity_steps(diagnostics_dir):
 if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     baseline_output_dir = project_root / "output" / "08_baseline_results"
-    diagnostics_dir = baseline_output_dir / "diagnostics"
+    tuning_diagnostics_dir = project_root / "evaluation" / "diagnostics"  # where tuning summary is saved
+    test_diagnostics_dir = baseline_output_dir / "diagnostics"  # where test results are saved
     model_output_dir = baseline_output_dir / "model_output"
-    diagnostics_dir.mkdir(parents=True, exist_ok=True)
+    test_diagnostics_dir.mkdir(parents=True, exist_ok=True)
     model_output_dir.mkdir(parents=True, exist_ok=True)
 
-    tuned_values = _load_best_velocity_steps(diagnostics_dir)
+    tuned_values = _load_best_velocity_steps(tuning_diagnostics_dir)
     cv_steps = tuned_values.get("cv") or tuned_values.get("constant_velocity")
     ctrv_steps = tuned_values.get("ctrv")
 
-    cv_kwargs = {"velocity_fraction": 0.4} if cv_steps is None else {"velocity_steps": int(cv_steps)}
-    ctrv_kwargs = {"velocity_fraction": 0.4} if ctrv_steps is None else {"velocity_steps": int(ctrv_steps)}
+    cv_kwargs = {"velocity_steps": int(cv_steps)} if cv_steps is not None else {"velocity_steps": 1}
+    ctrv_kwargs = {"velocity_steps": int(ctrv_steps)} if ctrv_steps is not None else {"velocity_steps": 1}
 
     models = []
     if RUN_CONSTANT_VELOCITY:
@@ -109,14 +105,14 @@ if __name__ == "__main__":
         per_month_metrics = metrics.get('per_month_metrics', pd.DataFrame())
 
         if not per_file_metrics.empty:
-            per_file_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_file_{model_key}.csv"
+            per_file_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_file_{model_key}.csv"
             per_file_metrics.to_csv(per_file_path, index=False)
             print("\nWorst 10 files by RMSE:")
             print(per_file_metrics.head(10).to_string(index=False))
             print(f"Saved per-file metrics to {per_file_path}")
 
         if not per_month_metrics.empty:
-            per_month_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_month_{model_key}.csv"
+            per_month_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_month_{model_key}.csv"
             per_month_metrics.to_csv(per_month_path, index=False)
             print("\nMonths sorted by RMSE:")
             print(per_month_metrics.to_string(index=False))
@@ -130,12 +126,12 @@ if __name__ == "__main__":
         # Persist ADE_per_step so the plot block below can load it independently
         ade_per_step = metrics.get('ADE_per_step')
         if ade_per_step is not None and len(ade_per_step) > 0:
-            ade_path = diagnostics_dir / f"{EVAL_SPLIT}_ade_per_step_{model_key}.csv"
+            ade_path = test_diagnostics_dir / f"{EVAL_SPLIT}_ade_per_step_{model_key}.csv"
             pd.DataFrame({'ade': ade_per_step}).to_csv(ade_path, index=False)
             print(f"Saved ADE_per_step to {ade_path}")
 
     comparison_df = pd.DataFrame(comparison_rows)
-    comparison_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_model_comparison.csv"
+    comparison_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_model_comparison.csv"
     comparison_df.to_csv(comparison_path, index=False)
     print("\n=== Model comparison ===")
     print(comparison_df.to_string(index=False))
@@ -151,7 +147,7 @@ if __name__ == "__main__":
         fig_p, ax_p = plt.subplots()
         any_plotted = False
         for key, label in ALL_MODEL_LABELS.items():
-            ade_path = diagnostics_dir / f"{EVAL_SPLIT}_ade_per_step_{key}.csv"
+            ade_path = test_diagnostics_dir / f"{EVAL_SPLIT}_ade_per_step_{key}.csv"
             if not ade_path.exists():
                 print(f"No ADE_per_step file for {label}, skipping.")
                 continue

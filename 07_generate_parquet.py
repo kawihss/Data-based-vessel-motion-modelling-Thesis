@@ -19,15 +19,15 @@ STRING_COLS = ['t_utc', 'role', 'vessel_id', 'context']
 
 def _normalize_export_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     if 'track_id' in df.columns:
-        df['track_id'] = pd.to_numeric(df['track_id'], errors='raise').astype('int64', copy=False)
+        df['track_id'] = pd.to_numeric(df['track_id'], errors='raise').astype('int64')
 
     for col in FLOAT32_COLS:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').astype('float32', copy=False)
+            df[col] = pd.to_numeric(df[col], errors='coerce').astype('float32')
 
     for col in STRING_COLS:
         if col in df.columns:
-            df[col] = df[col].astype('string', copy=False)
+            df[col] = df[col].astype('string')
 
     return df
 
