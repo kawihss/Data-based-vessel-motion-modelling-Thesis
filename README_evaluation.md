@@ -26,12 +26,17 @@ Current runtime data paths:
 
 Current baseline models:
 
-- `ConstantVelocityModel`
+- `ConstantVelocityModel` (CV)
 - `ConstantTurnRateVelocityModel` (CTRV)
+- `HybridCVCTRVModel` (Hybrid)
 
-Both models use one parameterization mode:
+CV and CTRV use one parameterization:
 
-1. `velocity_steps` (integer number of recent context steps to average).
+- `velocity_steps`: number of recent context steps to average.
+
+The Hybrid model selects between CV and CTRV per track based on a rotation-rate threshold. It has additional parameters `cv_velocity_steps`, `ctrv_velocity_steps`, `rot_steps`, and `rot_threshold`.
+
+**Note on Hybrid model behavior:** In practice, the Hybrid model almost always selects the CV branch, even after tuning. The rotation threshold ends up rarely triggered on this dataset, so Hybrid predictions differ from pure CV only in marginal cases. Whether to include the Hybrid model in the final thesis evaluation is still open; it adds complexity for negligible empirical gain.
 
 ## Evaluation Layer
 
@@ -103,10 +108,9 @@ Purpose:
 
 Current behavior:
 
-1. tries to load tuned parameters from `tuning_best_params_val.csv`,
-2. falls back to defaults if tuning summary is missing,
-3. evaluates on configured split (default: `test`),
-4. writes outputs under `output/08_baseline_results/`.
+1. loads tuned parameters from `tuning_best_params_val.csv` (crashes if missing; run tuning first),
+2. evaluates on configured split (default: `test`),
+3. writes outputs under `output/08_baseline_results/`.
 
 Current baseline output structure:
 

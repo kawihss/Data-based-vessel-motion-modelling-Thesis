@@ -6,9 +6,8 @@ from matplotlib.widgets import Slider, Button, CheckButtons
 from pathlib import Path
 
 #this script can be used to manually inspect individual tracks
-#created with help of Claude Sonnet for interactive plotting
 
-# Global switches — also togglable in the GUI
+# Globals also togglable in the GUI
 SHOW_CV = True
 SHOW_CTRV = True
 SHOW_HYBRID = True
@@ -23,9 +22,6 @@ def load_data(source):
         df = pd.read_csv(source)
         df['t_utc'] = pd.to_datetime(df['t_utc'])
 
-    print(f"Loaded {len(df):,} records | "
-          f"{df['vessel_id'].nunique()} vessels | "
-          f"{df['track_id'].nunique()} segments")
     return df
 
 
@@ -33,7 +29,7 @@ def load_model_predictions(source_file, model_output_dir='output/08_baseline_res
     model_specs = {
         'constant_velocity': {'label': 'CV',     'color': '#ff7f0e', 'marker': 'x', 'alpha': 0.9},
         'ctrv':              {'label': 'CTRV',   'color': '#d62728', 'marker': '^', 'alpha': 0.9},
-        'hybrid_cv_ctrv':    {'label': 'Hybrid', 'color': '#9467bd', 'marker': 's', 'alpha': 0.45},
+        'hybrid_cv_ctrv':    {'label': 'Hybrid', 'color': '#9467bd', 'marker': 's', 'alpha': 0.45},#overlaps, transparent
     }
 
     source_stem = Path(source_file).stem

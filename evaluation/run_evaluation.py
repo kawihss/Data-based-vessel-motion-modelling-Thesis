@@ -34,9 +34,9 @@ if __name__ == "__main__":
     model_output_dir.mkdir(parents=True, exist_ok=True)
 
     tuned_values = _load_tuned_values(tuning_diagnostics_dir)
-    cv_row = tuned_values.get("cv") or tuned_values.get("constant_velocity") or {}
-    ctrv_row = tuned_values.get("ctrv") or {}
-    hybrid_row = tuned_values.get("hybrid_cv_ctrv") or {}
+    cv_row = tuned_values.get("cv") or tuned_values.get("constant_velocity")
+    ctrv_row = tuned_values["ctrv"]
+    hybrid_row = tuned_values["hybrid_cv_ctrv"]
 
     cv_steps = cv_row.get("best_velocity_steps")
     ctrv_steps = ctrv_row.get("best_velocity_steps")

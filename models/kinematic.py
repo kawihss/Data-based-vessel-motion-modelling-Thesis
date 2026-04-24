@@ -57,7 +57,7 @@ class ConstantTurnRateVelocityModel(BaselineModel):
         mean_dx = dx[-n:].mean() if len(dx) > 0 else 0.0
         mean_dy = dy[-n:].mean() if len(dy) > 0 else 0.0
 
-        recent_rot = np.asarray(rot[-(n + 1):], dtype=float)
+        recent_rot = np.asarray(rot[-(n + 1):], dtype=float) # n = 1 number of delas, so n+1 values needed, rot is not delta
 
         # Keep ROT in original deg/min and derive per-step heading increment in degrees
         rot_deg_per_min = np.nanmean(recent_rot)
@@ -67,8 +67,7 @@ class ConstantTurnRateVelocityModel(BaselineModel):
         # Fixed sampling interval from preprocessing pipeline
         dt = 30.0
 
-        # Nautical ROT is clockwise-positive, while math rotation is CCW-positive.
-        # Negating aligns turn direction with the XY rotation matrix below.
+        # Nautical ROT is clockwise-positive, while math rotation is opposite
         dpsi_deg = -rot_deg_per_min * (dt / 60.0)
         dpsi_rad = np.deg2rad(dpsi_deg)
         cos_dpsi = np.cos(dpsi_rad)
@@ -82,6 +81,7 @@ class ConstantTurnRateVelocityModel(BaselineModel):
             displacements[i, 0] = cur_dx
             displacements[i, 1] = cur_dy
 
+            # Rotate the velocity vector for the next step
             next_dx = cur_dx * cos_dpsi - cur_dy * sin_dpsi
             next_dy = cur_dx * sin_dpsi + cur_dy * cos_dpsi
             cur_dx, cur_dy = next_dx, next_dy
@@ -126,7 +126,7 @@ class HybridCVCTRVModel(BaselineModel):
 
         cv_velocity_steps = self._window_steps(self.cv_velocity_steps, len(x))
         ctrv_velocity_steps = self._window_steps(self.ctrv_velocity_steps, len(x))
-        n = max(1, min(len(rot_values), int(self.rot_steps)))
+        n = max(1, min(len(rot_values), int(self.rot_steps))) #clipping
 
         rot_recent = np.abs(rot_values[-n:])
         mean_abs_rot = float(np.nanmean(rot_recent)) if len(rot_recent) > 0 else 0.0

@@ -228,22 +228,12 @@ def evaluate_model_cached_numpy(model, cached_tracks):
         if n_pred_steps <= 0:
             continue
 
-        if hasattr(model, 'predict_from_arrays'):
-            displacements = model.predict_from_arrays(
-                track['x_ctx'],
-                track['y_ctx'],
-                track['rot_ctx'],
-                n_pred_steps,
-            )
-        else:
-            # Fallback keeps compatibility with older models.
-            context_df = pd.DataFrame({
-                'x': track['x_ctx'],
-                'y': track['y_ctx'],
-                'rot': track['rot_ctx'],
-            })
-            displacements = model.predict(context_df, n_pred_steps)
-
+        displacements = model.predict_from_arrays(
+            track['x_ctx'],
+            track['y_ctx'],
+            track['rot_ctx'],
+            n_pred_steps,
+        )
         pred_positions = reconstruct_positions(track['last_x'], track['last_y'], displacements)
         true_positions = track['true_xy']
 
@@ -288,17 +278,6 @@ def run_evaluation(
     model_key=None,
     model_label=None,
 ):
-    # wrapper: load all files for a split and evaluate.
-    # data_dir: path to output/07_parquet/
-    # split: 'train', 'val', or 'test' (kinematic models always use 'test')
-    # context_filter: str or list of str, e.g. 'lock', 'harbour', ['river', 'channel']
-    #   None = evaluate on all contexts
-    #
-    # Optuna objective example (lock-specific):
-    #   def objective(trial):
-    #       steps = trial.suggest_int('velocity_steps', 1, 9)
-    #       model = ConstantVelocityModel(velocity_steps=steps)
-    #       return run_evaluation(model, 'output/07_parquet', context_filter='lock')['ADE']
     files = _resolve_files(data_dir, split, context_filter)
     print(f"Streaming {len(files)} file(s) for split '{split}'" +
           (f", context(s) {context_filter}" if context_filter else ""))
