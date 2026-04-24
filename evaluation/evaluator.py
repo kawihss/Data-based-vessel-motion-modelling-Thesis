@@ -144,10 +144,6 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
         writer.writeheader()
 
         for track_id, context_df, pred_df in _iter_track_groups(df, with_track_id=True):
-
-            if context_df.empty or pred_df.empty:
-                continue
-
             n_pred_steps = len(pred_df)
             last_x = context_df['x'].iloc[-1]
             last_y = context_df['y'].iloc[-1]

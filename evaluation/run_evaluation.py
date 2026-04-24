@@ -17,25 +17,12 @@ EXPORT_PREDICTIONS = True
 
 
 def _load_tuned_values(diagnostics_dir):
-    best_path = diagnostics_dir / "tuning_best_params_val.csv"
-    if not best_path.exists():
-        print(f"No tuning summary found at {best_path}; using fallback defaults.")
-        return {}
-
-    df = pd.read_csv(best_path)
-    if df.empty or "model_key" not in df.columns:
-        print(f"Tuning summary {best_path} is invalid; using fallback defaults.")
-        return {}
-
-    best_values = {
+    df = pd.read_csv(diagnostics_dir / "tuning_best_params_val.csv")
+    return {
         str(row.get("model_key", "")).strip().lower(): row.to_dict()
         for _, row in df.iterrows()
         if str(row.get("model_key", "")).strip()
     }
-
-    if best_values:
-        print(f"Loaded tuned parameters from {best_path}")
-    return best_values
 
 if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
@@ -58,13 +45,13 @@ if __name__ == "__main__":
     hybrid_rot_steps = hybrid_row.get("best_rot_steps")
     hybrid_rot_threshold = hybrid_row.get("best_rot_threshold")
 
-    cv_kwargs = {"velocity_steps": int(cv_steps)} if pd.notna(cv_steps) else {"velocity_steps": 1}
-    ctrv_kwargs = {"velocity_steps": int(ctrv_steps)} if pd.notna(ctrv_steps) else {"velocity_steps": 1}
+    cv_kwargs = {"velocity_steps": int(cv_steps)}
+    ctrv_kwargs = {"velocity_steps": int(ctrv_steps)}
     hybrid_kwargs = {
-        "cv_velocity_steps": int(hybrid_cv_steps) if pd.notna(hybrid_cv_steps) else cv_kwargs["velocity_steps"],
-        "ctrv_velocity_steps": int(hybrid_ctrv_steps) if pd.notna(hybrid_ctrv_steps) else ctrv_kwargs["velocity_steps"],
-        "rot_steps": int(hybrid_rot_steps) if pd.notna(hybrid_rot_steps) else 1,
-        "rot_threshold": float(hybrid_rot_threshold) if pd.notna(hybrid_rot_threshold) else 1.0,
+        "cv_velocity_steps": int(hybrid_cv_steps),
+        "ctrv_velocity_steps": int(hybrid_ctrv_steps),
+        "rot_steps": int(hybrid_rot_steps),
+        "rot_threshold": float(hybrid_rot_threshold),
     }
 
     models = []
@@ -76,7 +63,6 @@ if __name__ == "__main__":
         models.append(("hybrid_cv_ctrv", "Hybrid CV/CTRV", HybridCVCTRVModel(**hybrid_kwargs)))
 
     if not models:
-        print("No models selected. Set RUN_CONSTANT_VELOCITY and/or RUN_CTRV and/or RUN_HYBRID to True.")
         raise SystemExit(0)
 
     comparison_rows = []

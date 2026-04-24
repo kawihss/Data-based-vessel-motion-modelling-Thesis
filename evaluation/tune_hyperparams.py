@@ -65,44 +65,19 @@ class RMSEEarlyStoppingCallback:
 
 
 def _load_branch_velocity_steps(diagnostics_dir):
-    best_path = diagnostics_dir / "tuning_best_params_val.csv"
-    if not best_path.exists():
-        raise FileNotFoundError(f"Hybrid tuning seed file not found: {best_path}")
-
-    df = pd.read_csv(best_path)
-    required_cols = {"model_key", "best_velocity_steps", "best_val_rmse"}
-    missing = required_cols.difference(df.columns)
-    if missing:
-        missing_cols = ", ".join(sorted(missing))
-        raise ValueError(f"Hybrid tuning seed file missing columns: {missing_cols}")
-
-    best_values = {}
-    for _, row in df.iterrows():
-        key = str(row.get("model_key", "")).strip().lower()
-        value = row.get("best_velocity_steps")
-        if key and pd.notna(value):
-            best_values[key] = int(value)
-
+    df = pd.read_csv(diagnostics_dir / "tuning_best_params_val.csv")
+    best_values = {
+        str(row.get("model_key", "")).strip().lower(): int(row["best_velocity_steps"])
+        for _, row in df.iterrows()
+        if str(row.get("model_key", "")).strip() and pd.notna(row.get("best_velocity_steps"))
+    }
     cv_velocity_steps = best_values.get("cv", best_values.get("constant_velocity"))
     ctrv_velocity_steps = best_values.get("ctrv")
-    if cv_velocity_steps is None or ctrv_velocity_steps is None:
-        raise ValueError("Hybrid tuning requires best_velocity_steps for both CV and CTRV.")
-
     return cv_velocity_steps, ctrv_velocity_steps
 
 
 def _load_existing_best_rows(diagnostics_dir):
-    best_path = diagnostics_dir / "tuning_best_params_val.csv"
-    if not best_path.exists():
-        raise FileNotFoundError(f"Existing tuning summary not found: {best_path}")
-
-    df = pd.read_csv(best_path)
-    if df.empty:
-        raise ValueError(f"Existing tuning summary is empty: {best_path}")
-    if "model_key" not in df.columns:
-        raise ValueError("Existing tuning summary missing 'model_key' column.")
-
-    return df.to_dict(orient="records")
+    return pd.read_csv(diagnostics_dir / "tuning_best_params_val.csv").to_dict(orient="records")
 
 
 def plot_results(df, best_steps, best_rmse, model_label, output_path):
@@ -237,8 +212,6 @@ def plot_hybrid_results(
 
 def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diagnostics_dir):
     cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
-    if not cached_tracks:
-        raise ValueError("No tracks available in cache for the selected split/context.")
     max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
     max_velocity_steps = max(1, int(max_velocity_steps))
 
@@ -288,8 +261,6 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
 
 def run_hybrid_optimization(data_dir, diagnostics_dir):
     cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
-    if not cached_tracks:
-        raise ValueError("No tracks available in cache for the selected split/context.")
 
     max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
     max_velocity_steps = max(1, int(max_velocity_steps))
