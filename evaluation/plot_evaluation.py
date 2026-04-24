@@ -74,7 +74,7 @@ def plot_ade_horizon():
 
 # 2. Monthly metrics plot
 def _parse_month(val):
-    """Return a (year, month) tuple for sorting from strings like '2024-03'."""
+    # Parse strings like '2024-03' to a sortable (year, month) tuple.
     try:
         parts = str(val).split("-")
         return (int(parts[0]), int(parts[1]))

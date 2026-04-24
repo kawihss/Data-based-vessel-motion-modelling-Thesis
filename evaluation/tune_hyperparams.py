@@ -20,6 +20,9 @@ HYBRID_N_TRIALS = 200
 
 def make_objective(model_cls, cached_tracks, max_velocity_steps):
     # creates an Optuna objective function for tuning velocity_steps of a given model 
+
+    # use closures to pass the model class and cached tracks to the objective function 
+    # as only 1 argument (trial) is allowed by Optuna
     def objective(trial):
         velocity_steps = trial.suggest_int("velocity_steps", 1, max_velocity_steps)
         model = model_cls(velocity_steps=velocity_steps)
@@ -47,6 +50,7 @@ def make_hybrid_objective(cached_tracks, max_velocity_steps, rot_threshold_upper
 
 
 class RMSEEarlyStoppingCallback:
+    #early stopping 
     def __init__(self, patience, min_delta):
         self.patience = int(patience)
         self.min_delta = float(min_delta)
@@ -86,6 +90,13 @@ def _load_existing_best_rows(diagnostics_dir):
 
 
 def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diagnostics_dir):
+
+    #1. Load validation tracks into memory
+    #2. Create Optuna study and optimize the objective function with TPE and early stopping
+    # (TPE not the most efficient, but used here to demonstrate how to use Optuna
+    #3. Save all trials and best parameters to CSV
+    #4. Return best parameters for summary table
+
     cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
     max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
     max_velocity_steps = max(1, int(max_velocity_steps))
@@ -125,6 +136,15 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
 
 
 def run_hybrid_optimization(data_dir, diagnostics_dir):
+
+    #1. Load validation tracks into memory
+    #2. Create Optuna study and optimize the objective function with TPE, early stopping
+    #   and multivariate sampling
+    #3. Seeding the hybrid search with the best velocity_steps found for CV and CTRV branches, if available
+    #4. Save all trials and best parameters to CSV
+    #5. Return best parameters for summary table
+
+
     cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
 
     max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
@@ -177,8 +197,10 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
         "trials_csv": str(csv_path),
     }, trials_df
 
-
 def _run_model_job(result_queue, model_key, model_label, model_cls, data_dir, diagnostics_dir):
+    # mp.Process target: runs CV/CTRV tuning in a separate process
+    # and puts (best_row, trials_df) into the shared queue for the main process to collect
+    # necessary for multiprocessing
     best_row, trials_df = run_optimization_for_model(
         model_key=model_key,
         model_label=model_label,
@@ -190,6 +212,8 @@ def _run_model_job(result_queue, model_key, model_label, model_cls, data_dir, di
 
 
 def _run_hybrid_job(result_queue, data_dir, diagnostics_dir):
+    # mp.Process target: runs hybrid tuning in a separate process
+    # and puts (best_row, trials_df) into the shared queue for the main process to collect
     best_row, trials_df = run_hybrid_optimization(
         data_dir=data_dir,
         diagnostics_dir=diagnostics_dir,
@@ -198,6 +222,11 @@ def _run_hybrid_job(result_queue, data_dir, diagnostics_dir):
 
 
 if __name__ == "__main__":
+    # 1. Set up paths and output directories
+    # 2. Launch CV and CTRV tuning as parallel processes
+    # 3. Wait for both, collect results, save intermediate best-params CSV
+    # 4. Run hybrid tuning sequentially (needs CV/CTRV seeds from step 3)
+    # 5. Write final best-params and all-trials CSVs
     import multiprocessing as mp
 
     project_root = Path(__file__).resolve().parent.parent
