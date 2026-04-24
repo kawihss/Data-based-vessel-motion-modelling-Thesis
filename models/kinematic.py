@@ -87,3 +87,55 @@ class ConstantTurnRateVelocityModel(BaselineModel):
             cur_dx, cur_dy = next_dx, next_dy
 
         return displacements
+
+
+class HybridCVCTRVModel(BaselineModel):
+    def __init__(self, cv_velocity_steps=1, ctrv_velocity_steps=1, rot_steps=1, rot_threshold=1.0):
+        super().__init__("HybridCVCTRV")
+        self.cv_velocity_steps = cv_velocity_steps
+        self.ctrv_velocity_steps = ctrv_velocity_steps
+        self.rot_steps = rot_steps
+        self.rot_threshold = rot_threshold
+
+    def predict(self, context_df, n_pred_steps):
+        ctx = context_df.sort_values('t_utc')
+        x = ctx['x'].values
+        y = ctx['y'].values
+        if 'rot' not in ctx.columns:
+            raise ValueError("HybridCVCTRVModel requires a 'rot' column in the context data.")
+        rot = ctx['rot'].values
+        return self.predict_from_arrays(x, y, rot, n_pred_steps)
+
+    def _window_steps(self, velocity_steps, n_points):
+        if n_points <= 1:
+            raise ValueError("HybridCVCTRVModel requires at least two context points.")
+        n_deltas = n_points - 1
+        if int(velocity_steps) < 1:
+            raise ValueError("HybridCVCTRVModel requires velocity_steps >= 1.")
+        return max(1, min(n_deltas, int(velocity_steps)))
+
+    def predict_from_arrays(self, x, y, rot, n_pred_steps):
+        if n_pred_steps <= 0:
+            return np.empty((0, 2), dtype=float)
+
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        if rot is None:
+            raise ValueError("HybridCVCTRVModel requires rot values for CTRV switching.")
+        rot_values = np.asarray(rot, dtype=float)
+
+        cv_velocity_steps = self._window_steps(self.cv_velocity_steps, len(x))
+        ctrv_velocity_steps = self._window_steps(self.ctrv_velocity_steps, len(x))
+        n = max(1, min(len(rot_values), int(self.rot_steps)))
+
+        rot_recent = np.abs(rot_values[-n:])
+        mean_abs_rot = float(np.nanmean(rot_recent)) if len(rot_recent) > 0 else 0.0
+        if not np.isfinite(mean_abs_rot):
+            mean_abs_rot = 0.0
+
+        if mean_abs_rot >= float(self.rot_threshold):
+            model = ConstantTurnRateVelocityModel(velocity_steps=ctrv_velocity_steps)
+        else:
+            model = ConstantVelocityModel(velocity_steps=cv_velocity_steps)
+
+        return model.predict_from_arrays(x, y, rot_values, n_pred_steps)

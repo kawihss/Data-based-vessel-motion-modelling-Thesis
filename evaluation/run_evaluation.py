@@ -3,21 +3,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
-from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel
-from evaluation.evaluator import run_evaluation, plot_horizon_error
-import matplotlib.pyplot as plt
+from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, HybridCVCTRVModel
+from evaluation.evaluator import run_evaluation
 
 #runner for evaluation. to be replaced by optuna framework
 # Simple global runtime switches
 RUN_CONSTANT_VELOCITY = True
 RUN_CTRV = True
+RUN_HYBRID = True
 EVAL_SPLIT = 'test'
 CONTEXT_FILTER = None  # e.g. 'lock' or ['harbour', 'lock']
 EXPORT_PREDICTIONS = True
-SHOW_PLOT = True 
 
 
-def _load_best_velocity_steps(diagnostics_dir):
+def _load_tuned_values(diagnostics_dir):
     best_path = diagnostics_dir / "tuning_best_params_val.csv"
     if not best_path.exists():
         print(f"No tuning summary found at {best_path}; using fallback defaults.")
@@ -32,17 +31,11 @@ def _load_best_velocity_steps(diagnostics_dir):
         print("Tuning summary missing 'model_key' column; using fallback defaults.")
         return {}
 
-    step_col = "best_velocity_steps"
-    if step_col not in df.columns:
-        print("Tuning summary missing 'best_velocity_steps' column; using fallback defaults.")
-        return {}
-
     best_values = {}
     for _, row in df.iterrows():
         key = str(row.get("model_key", "")).strip().lower()
-        value = row.get(step_col)
-        if key and pd.notna(value):
-            best_values[key] = value
+        if key:
+            best_values[key] = row.to_dict()
 
     if best_values:
         print(f"Loaded tuned parameters from {best_path}")
@@ -60,21 +53,37 @@ if __name__ == "__main__":
     test_diagnostics_dir.mkdir(parents=True, exist_ok=True)
     model_output_dir.mkdir(parents=True, exist_ok=True)
 
-    tuned_values = _load_best_velocity_steps(tuning_diagnostics_dir)
-    cv_steps = tuned_values.get("cv") or tuned_values.get("constant_velocity")
-    ctrv_steps = tuned_values.get("ctrv")
+    tuned_values = _load_tuned_values(tuning_diagnostics_dir)
+    cv_row = tuned_values.get("cv") or tuned_values.get("constant_velocity") or {}
+    ctrv_row = tuned_values.get("ctrv") or {}
+    hybrid_row = tuned_values.get("hybrid_cv_ctrv") or {}
 
-    cv_kwargs = {"velocity_steps": int(cv_steps)} if cv_steps is not None else {"velocity_steps": 1}
-    ctrv_kwargs = {"velocity_steps": int(ctrv_steps)} if ctrv_steps is not None else {"velocity_steps": 1}
+    cv_steps = cv_row.get("best_velocity_steps")
+    ctrv_steps = ctrv_row.get("best_velocity_steps")
+    hybrid_cv_steps = hybrid_row.get("cv_velocity_steps")
+    hybrid_ctrv_steps = hybrid_row.get("ctrv_velocity_steps")
+    hybrid_rot_steps = hybrid_row.get("best_rot_steps")
+    hybrid_rot_threshold = hybrid_row.get("best_rot_threshold")
+
+    cv_kwargs = {"velocity_steps": int(cv_steps)} if pd.notna(cv_steps) else {"velocity_steps": 1}
+    ctrv_kwargs = {"velocity_steps": int(ctrv_steps)} if pd.notna(ctrv_steps) else {"velocity_steps": 1}
+    hybrid_kwargs = {
+        "cv_velocity_steps": int(hybrid_cv_steps) if pd.notna(hybrid_cv_steps) else cv_kwargs["velocity_steps"],
+        "ctrv_velocity_steps": int(hybrid_ctrv_steps) if pd.notna(hybrid_ctrv_steps) else ctrv_kwargs["velocity_steps"],
+        "rot_steps": int(hybrid_rot_steps) if pd.notna(hybrid_rot_steps) else 1,
+        "rot_threshold": float(hybrid_rot_threshold) if pd.notna(hybrid_rot_threshold) else 1.0,
+    }
 
     models = []
     if RUN_CONSTANT_VELOCITY:
         models.append(("constant_velocity", "Constant Velocity", ConstantVelocityModel(**cv_kwargs)))
     if RUN_CTRV:
         models.append(("ctrv", "CTRV", ConstantTurnRateVelocityModel(**ctrv_kwargs)))
+    if RUN_HYBRID:
+        models.append(("hybrid_cv_ctrv", "Hybrid CV/CTRV", HybridCVCTRVModel(**hybrid_kwargs)))
 
     if not models:
-        print("No models selected. Set RUN_CONSTANT_VELOCITY and/or RUN_CTRV to True.")
+        print("No models selected. Set RUN_CONSTANT_VELOCITY and/or RUN_CTRV and/or RUN_HYBRID to True.")
         raise SystemExit(0)
 
     comparison_rows = []
@@ -137,26 +146,4 @@ if __name__ == "__main__":
     print(comparison_df.to_string(index=False))
     print(f"Saved model comparison to {comparison_path}")
 
-    # Separate plot block: reads saved ADE_per_step for ALL known models,
-    # regardless of which were selected for this run.
-    if SHOW_PLOT:
-        ALL_MODEL_LABELS = {
-            "constant_velocity": "Constant Velocity",
-            "ctrv": "CTRV",
-        }
-        fig_p, ax_p = plt.subplots()
-        any_plotted = False
-        for key, label in ALL_MODEL_LABELS.items():
-            ade_path = test_diagnostics_dir / f"{EVAL_SPLIT}_ade_per_step_{key}.csv"
-            if not ade_path.exists():
-                print(f"No ADE_per_step file for {label}, skipping.")
-                continue
-            ade_values = pd.read_csv(ade_path)['ade'].values
-            plot_horizon_error({'ADE_per_step': ade_values}, label=label, ax=ax_p)
-            any_plotted = True
-        if any_plotted:
-            ax_p.legend()
-            plt.tight_layout()
-            plt.show()
-        else:
-            print("No ADE_per_step files found for plotting.")
+    print("\nRun evaluation/plot_evaluation.py to generate plots.")
