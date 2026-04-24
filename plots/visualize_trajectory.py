@@ -191,7 +191,7 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
 if __name__ == "__main__":
 
     # Point to a parquet file in output/07_parquet/ (stem must match the prediction output filenames)
-    source_file = 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-01_02.parquet'
+    source_file = 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-01_01.parquet'
     #source_file = 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-07_01.parquet'
     #source_file = 'output/07_parquet/test_river_processed_bremerhaven_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Bremerhaven-2025-02_16.parquet'
 

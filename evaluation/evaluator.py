@@ -2,10 +2,8 @@ import numpy as np
 import pandas as pd
 import re
 import csv
-import time
 from pathlib import Path
 from .metrics import evaluate_trajectory, plot_ade_over_horizon
-from models.kinematic import ConstantVelocityModel
 
 # Valid context labels from the preprocessing pipeline
 CONTEXT_LABELS = {'river', 'channel', 'harbour', 'lock', 'unknown'}
@@ -66,37 +64,6 @@ def _iter_track_groups(df, with_track_id=False):
             yield context, pred
 
 
-def load_tracks(data_dir, split='test', context_filter=None):
-    # Generator that yields (context_df, pred_df) one track at a time.
-    # Reads one file at a time so only one CSV is in memory at once.
-    # split: 'train', 'val', or 'test'
-    # context_filter: str or list of str from CONTEXT_LABELS, e.g. 'lock' or ['harbour', 'lock']
-    files = _resolve_files(data_dir, split, context_filter)
-    print(f"Streaming {len(files)} file(s) for split '{split}'" +
-          (f", context(s) {context_filter}" if context_filter else ""))
-
-    for f in files:
-        df = _read_track_file(f)
-        yield from _iter_track_groups(df)
-
-
-def load_tracks_cached(data_dir, split='test', context_filter=None):
-    # Materialize tracks in memory once for repeated evaluations (e.g., hyperparameter tuning).
-    files = _resolve_files(data_dir, split, context_filter)
-    print(f"Caching tracks from {len(files)} file(s) for split '{split}'" +
-          (f", context(s) {context_filter}" if context_filter else ""))
-
-    cached_tracks = []
-    for f in files:
-        df = _read_track_file(f)
-        for context, pred in _iter_track_groups(df):
-            # Copy slices once so repeated trials don't keep dataframe views alive.
-            cached_tracks.append((context.copy(), pred.copy()))
-
-    print(f"Cached {len(cached_tracks)} track(s) in memory")
-    return cached_tracks
-
-
 def load_tracks_cached_numpy(data_dir, split='test', context_filter=None):
     files = _resolve_files(data_dir, split, context_filter)
     print(f"Caching numpy tracks from {len(files)} file(s) for split '{split}'" +
@@ -126,11 +93,6 @@ def load_tracks_cached_numpy(data_dir, split='test', context_filter=None):
 
     print(f"Cached {len(cached_tracks)} numpy track(s) in memory")
     return cached_tracks
-
-
-def load_tracks_from_file(file_path):
-    df = _read_track_file(file_path)
-    yield from _iter_track_groups(df)
 
 
 def reconstruct_positions(last_x, last_y, displacements):
@@ -261,21 +223,6 @@ def _evaluate_tracks(model, tracks):
     return metrics, all_true, all_pred
 
 
-def evaluate_model(model, tracks):
-    # Core evaluation loop, Optuna objective calls this directly.
-    # tracks: generator or list of (context_df, pred_df) from load_tracks()
-    # Accumulates only small numpy arrays, not full DataFrames, to stay memory efficient.
-    # returns dict with ADE, FDE, RMSE, n_tracks
-    metrics, _, _ = _evaluate_tracks(model, tracks)
-    return metrics
-
-
-def evaluate_model_cached(model, cached_tracks):
-    # Evaluate using a preloaded list of tracks to avoid repeated file I/O in tuning loops.
-    metrics, _, _ = _evaluate_tracks(model, cached_tracks)
-    return metrics
-
-
 def evaluate_model_cached_numpy(model, cached_tracks):
     all_true = []
     all_pred = []
@@ -324,89 +271,6 @@ def evaluate_model_cached_numpy(model, cached_tracks):
     return metrics
 
 
-def benchmark_loading(data_dir, split='val', context_filter=None, repeats=3):
-    rows = []
-    for i in range(repeats):
-        t0 = time.perf_counter()
-        tracks_df = load_tracks_cached(data_dir, split=split, context_filter=context_filter)
-        t1 = time.perf_counter()
-        tracks_np = load_tracks_cached_numpy(data_dir, split=split, context_filter=context_filter)
-        t2 = time.perf_counter()
-        rows.append({
-            'run': i + 1,
-            'tracks_df': len(tracks_df),
-            'tracks_np': len(tracks_np),
-            'load_df_s': t1 - t0,
-            'load_np_s': t2 - t1,
-            'total_s': t2 - t0,
-        })
-    return pd.DataFrame(rows)
-
-
-def benchmark_median_runtime(
-    data_dir,
-    split='val',
-    context_filter=None,
-    repeats=5,
-    velocity_steps=5,
-):
-    rows = []
-    for i in range(repeats):
-        t0 = time.perf_counter()
-        tracks_np = load_tracks_cached_numpy(data_dir, split=split, context_filter=context_filter)
-        t1 = time.perf_counter()
-
-        model = ConstantVelocityModel(velocity_steps=velocity_steps)
-        evaluate_model_cached_numpy(model, tracks_np)
-        t2 = time.perf_counter()
-
-        rows.append({
-            'run': i + 1,
-            'n_tracks': len(tracks_np),
-            'load_s': t1 - t0,
-            'eval_s': t2 - t1,
-            'total_s': t2 - t0,
-        })
-
-    df = pd.DataFrame(rows)
-    summary = {
-        'load_median_s': float(df['load_s'].median()),
-        'eval_median_s': float(df['eval_s'].median()),
-        'total_median_s': float(df['total_s'].median()),
-        'n_tracks': int(df['n_tracks'].median()),
-    }
-
-    print('Median runtime benchmark')
-    print(f"  Runs              : {repeats}")
-    print(f"  Tracks            : {summary['n_tracks']}")
-    print(f"  Load median       : {summary['load_median_s']:.3f} s")
-    print(f"  Eval median       : {summary['eval_median_s']:.3f} s")
-    print(f"  Total median      : {summary['total_median_s']:.3f} s")
-
-    return df, summary
-
-
-def evaluate_file_metrics(model, data_dir, split='test', context_filter=None):
-    files = _resolve_files(data_dir, split, context_filter)
-    rows = []
-
-    print(f"Evaluating {len(files)} file(s) individually for split '{split}'")
-
-    for file_path in files:
-        metrics, _, _ = _evaluate_tracks(model, load_tracks_from_file(file_path))
-        row = {
-            'file': Path(file_path).name,
-            'month': _extract_month_label(file_path),
-            'ADE': metrics['ADE'],
-            'FDE': metrics['FDE'],
-            'RMSE': metrics['RMSE'],
-            'n_tracks': metrics['n_tracks'],
-        }
-        rows.append(row)
-
-    return pd.DataFrame(rows).sort_values(['RMSE', 'FDE', 'ADE'], ascending=False).reset_index(drop=True)
-
-
 def plot_horizon_error(metrics, label=None, ax=None, step_duration_s=30, save_path=None):
     # wrapper: pass the dict returned by evaluate_model/run_evaluation
     return plot_ade_over_horizon(
@@ -448,7 +312,6 @@ def run_evaluation(
         if prediction_output_dir is None:
             prediction_output_dir = Path(data_dir).resolve().parent / '07_model_output'
         prediction_output_dir = Path(prediction_output_dir)
-        prediction_output_dir.mkdir(parents=True, exist_ok=True)
 
     per_file_rows = []
     all_true = []
@@ -456,11 +319,7 @@ def run_evaluation(
 
     for file_path in files:
         df = _read_track_file(file_path)
-        grouped_tracks = list(_iter_track_groups(df, with_track_id=True))
-        file_metrics, file_true, file_pred = _evaluate_tracks(
-            model,
-            ((context_df, pred_df) for _, context_df, pred_df in grouped_tracks),
-        )
+        file_metrics, file_true, file_pred = _evaluate_tracks(model, _iter_track_groups(df))
         per_file_rows.append({
             'file': Path(file_path).name,
             'month': _extract_month_label(file_path),
@@ -475,65 +334,14 @@ def run_evaluation(
             all_pred.extend(file_pred)
 
         if export_predictions:
-            output_path = prediction_output_dir / f"{Path(file_path).stem}__{(model_key or _default_model_key(model))}.csv"
-            columns = [
-                'source_file',
-                'source_stem',
-                'split',
-                'model_key',
-                'model_label',
-                'track_id',
-                'vessel_id',
-                'context',
-                'pred_step',
-                't_utc_pred',
-                'x_pred',
-                'y_pred',
-                'x_gt',
-                'y_gt',
-            ]
-            row_count = 0
-            with output_path.open('w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=columns)
-                writer.writeheader()
-
-                for track_id, context_df, pred_df in grouped_tracks:
-                    n_pred_steps = len(pred_df)
-                    last_x = context_df['x'].iloc[-1]
-                    last_y = context_df['y'].iloc[-1]
-
-                    displacements = model.predict(context_df, n_pred_steps)
-                    pred_positions = reconstruct_positions(last_x, last_y, displacements)
-                    if len(pred_positions) != n_pred_steps:
-                        continue
-
-                    vessel_id = context_df['vessel_id'].iloc[-1] if 'vessel_id' in context_df else None
-                    context_label = context_df['context'].iloc[-1] if 'context' in context_df else None
-                    pred_sorted = pred_df.sort_values('t_utc').reset_index(drop=True)
-
-                    for i in range(n_pred_steps):
-                        writer.writerow({
-                            'source_file': Path(file_path).name,
-                            'source_stem': Path(file_path).stem,
-                            'split': split,
-                            'model_key': model_key or _default_model_key(model),
-                            'model_label': model_label or getattr(model, 'name', _default_model_key(model)),
-                            'track_id': track_id,
-                            'vessel_id': vessel_id,
-                            'context': context_label,
-                            'pred_step': i + 1,
-                            't_utc_pred': pred_sorted['t_utc'].iloc[i] if 't_utc' in pred_sorted else '',
-                            'x_pred': float(pred_positions[i, 0]),
-                            'y_pred': float(pred_positions[i, 1]),
-                            'x_gt': float(pred_sorted['x'].iloc[i]),
-                            'y_gt': float(pred_sorted['y'].iloc[i]),
-                        })
-                        row_count += 1
-
+            result = export_predictions_for_file(
+                model, file_path, prediction_output_dir,
+                split=split, model_key=model_key, model_label=model_label,
+            )
             prediction_exports.append({
                 'file': Path(file_path).name,
-                'output_path': str(output_path),
-                'rows': row_count,
+                'output_path': str(result['output_path']),
+                'rows': result['rows'],
             })
 
     if all_true:

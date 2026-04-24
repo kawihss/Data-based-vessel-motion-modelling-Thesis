@@ -23,25 +23,18 @@ def _load_tuned_values(diagnostics_dir):
         return {}
 
     df = pd.read_csv(best_path)
-    if df.empty:
-        print(f"Tuning summary {best_path} is empty; using fallback defaults.")
+    if df.empty or "model_key" not in df.columns:
+        print(f"Tuning summary {best_path} is invalid; using fallback defaults.")
         return {}
 
-    if "model_key" not in df.columns:
-        print("Tuning summary missing 'model_key' column; using fallback defaults.")
-        return {}
-
-    best_values = {}
-    for _, row in df.iterrows():
-        key = str(row.get("model_key", "")).strip().lower()
-        if key:
-            best_values[key] = row.to_dict()
+    best_values = {
+        str(row.get("model_key", "")).strip().lower(): row.to_dict()
+        for _, row in df.iterrows()
+        if str(row.get("model_key", "")).strip()
+    }
 
     if best_values:
         print(f"Loaded tuned parameters from {best_path}")
-    else:
-        print(f"No valid tuned parameters in {best_path}; using fallback defaults.")
-
     return best_values
 
 if __name__ == "__main__":
@@ -89,7 +82,6 @@ if __name__ == "__main__":
     comparison_rows = []
 
     for model_key, model_label, model in models:
-        print(f"\n=== Evaluating {model_label} ===")
         metrics = run_evaluation(
             model,
             project_root / "output/07_parquet",
@@ -100,7 +92,6 @@ if __name__ == "__main__":
             model_key=model_key,
             model_label=model_label,
         )
-        print(metrics)
 
         comparison_rows.append({
             'model': model_label,
@@ -116,34 +107,16 @@ if __name__ == "__main__":
         if not per_file_metrics.empty:
             per_file_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_file_{model_key}.csv"
             per_file_metrics.to_csv(per_file_path, index=False)
-            print("\nWorst 10 files by RMSE:")
-            print(per_file_metrics.head(10).to_string(index=False))
-            print(f"Saved per-file metrics to {per_file_path}")
 
         if not per_month_metrics.empty:
             per_month_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_month_{model_key}.csv"
             per_month_metrics.to_csv(per_month_path, index=False)
-            print("\nMonths sorted by RMSE:")
-            print(per_month_metrics.to_string(index=False))
-            print(f"Saved per-month metrics to {per_month_path}")
 
-        prediction_exports = metrics.get('prediction_exports', pd.DataFrame())
-        if not prediction_exports.empty:
-            print(f"Saved {len(prediction_exports)} prediction file(s) for {model_label} to {model_output_dir}")
-            print(prediction_exports.head(5).to_string(index=False))
-
-        # Persist ADE_per_step so the plot block below can load it independently
         ade_per_step = metrics.get('ADE_per_step')
         if ade_per_step is not None and len(ade_per_step) > 0:
             ade_path = test_diagnostics_dir / f"{EVAL_SPLIT}_ade_per_step_{model_key}.csv"
             pd.DataFrame({'ade': ade_per_step}).to_csv(ade_path, index=False)
-            print(f"Saved ADE_per_step to {ade_path}")
 
     comparison_df = pd.DataFrame(comparison_rows)
     comparison_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_model_comparison.csv"
     comparison_df.to_csv(comparison_path, index=False)
-    print("\n=== Model comparison ===")
-    print(comparison_df.to_string(index=False))
-    print(f"Saved model comparison to {comparison_path}")
-
-    print("\nRun evaluation/plot_evaluation.py to generate plots.")
