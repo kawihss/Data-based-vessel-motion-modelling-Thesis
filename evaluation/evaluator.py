@@ -11,8 +11,11 @@ MONTH_PATTERN = re.compile(r"(\d{4})-(\d{2})_\d{2}$")
 
 TRACK_USECOLS = ['track_id', 'role', 't_utc', 'x', 'y', 'rot', 'vessel_id', 'context']
 
+#internal functions marked _name
 
 def _resolve_files(data_dir, split, context_filter):
+    #looks for files in the data_dir, filtered by split and context if provided, 
+    # returns list of file paths
     data_dir = Path(data_dir)
     if context_filter is not None:
         if isinstance(context_filter, str):
@@ -35,14 +38,13 @@ def _resolve_files(data_dir, split, context_filter):
 
 def _extract_month_label(file_path):
     name = Path(file_path).stem
-    match = MONTH_PATTERN.search(name)
-    if match is not None:
-        year, month = match.groups()
-        return f"{year}-{month}"
-    return None
+    match = MONTH_PATTERN.search(name)    #regex 
+    year, month = match.groups()
+    return f"{year}-{month}"
 
 
 def _read_track_file(file_path):
+    #reads required columns from a track file, returns dataframe
     file_path = Path(file_path)
     suffix = file_path.suffix.lower()
 
@@ -53,18 +55,22 @@ def _read_track_file(file_path):
 
 
 def _iter_track_groups(df, with_track_id=False):
+    #iterates over tracks dataframe, yields context and prediction dataframes
     for track_id, group in df.groupby('track_id', sort=False):
         context = group[group['role'] == 'context']
         pred = group[group['role'] == 'prediction']
         if len(context) == 0 or len(pred) == 0:
             continue
+        #yield to avoid loading all tracks into memory at once
         if with_track_id:
-            yield track_id, context, pred
+            yield track_id, context, pred 
         else:
             yield context, pred
 
 
 def load_tracks_cached_numpy(data_dir, split='test', context_filter=None):
+    #loads all tracks for the specified split and context into RAM as numpy arrays,
+    #massively reduces time spent in I/O
     files = _resolve_files(data_dir, split, context_filter)
     print(f"Caching numpy tracks from {len(files)} file(s) for split '{split}'" +
           (f", context(s) {context_filter}" if context_filter else ""))
@@ -96,21 +102,25 @@ def load_tracks_cached_numpy(data_dir, split='test', context_filter=None):
 
 
 def reconstruct_positions(last_x, last_y, displacements):
-    # displacements: (n_steps, 2) array of predicted (dx, dy)
-    # returns absolute (x, y) positions: (n_steps, 2)
-    positions = np.cumsum(displacements, axis=0)
+    # models predict displacements (dx, dy) 
+    # need absolute positions for evaluation
+    # example: last_x = 100, last_y = 200, displacements = [[10, 0], [10, 0], [10, 0]]
+
+    positions = np.cumsum(displacements, axis=0) #[[10, 0], [20, 0], [30, 0]]
     positions[:, 0] += last_x
     positions[:, 1] += last_y
-    return positions
+    return positions # [[110, 200], [120, 200], [130, 200]]
 
 
 def _default_model_key(model):
     name = getattr(model, 'name', 'model')
     key = re.sub(r'[^a-z0-9]+', '_', str(name).lower()).strip('_')
-    return key or 'model'
-
+    return key if key else 'model'
 
 def export_predictions_for_file(model, file_path, output_dir, split='test', model_key=None, model_label=None):
+    # runs prediction on test dataset
+    # exports CSV 
+    
     file_path = Path(file_path)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -182,6 +192,8 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
 
 
 def _evaluate_tracks(model, tracks):
+    # evaluates a list of (context_df, pred_df) pairs for a single file,
+    # returns metrics and arrays of pred positions and ground truth positions
     all_true = []
     all_pred = []
 
@@ -220,6 +232,9 @@ def _evaluate_tracks(model, tracks):
 
 
 def evaluate_model_cached_numpy(model, cached_tracks):
+    # loop that evaluates a model on all pre-loaded tracks
+    # returns metrics
+
     all_true = []
     all_pred = []
 
