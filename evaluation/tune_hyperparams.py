@@ -8,14 +8,17 @@ import optuna
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, HybridCVCTRVModel
+from models.filters import KalmanFilter
 from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy
 
 CONTEXT_FILTER = None   # None = all contexts; or e.g. 'lock', or ['harbour', 'lock'] 
 RUN_CV = False
 RUN_CTRV = False
-RUN_HYBRID = True
+RUN_HYBRID = False
+RUN_KALMAN = True
 N_TRIALS = 15
 HYBRID_N_TRIALS = 200
+KALMAN_N_TRIALS = 80
 
 
 def make_objective(model_cls, cached_tracks, max_velocity_steps):
@@ -46,6 +49,27 @@ def make_hybrid_objective(cached_tracks, max_velocity_steps, rot_threshold_upper
         )
         metrics = evaluate_model_cached_numpy(model, cached_tracks)
         return metrics["RMSE"]
+    return objective
+
+
+def make_kalman_objective(cached_tracks):
+    def objective(trial):
+        q_pos = trial.suggest_float("q_pos", 1e-3, 1e3, log=True)
+        q_vel = trial.suggest_float("q_vel", 1e-5, 1e1, log=True)
+        r_pos = trial.suggest_float("r_pos", 1e-2, 1e3, log=True)
+        p0_pos = trial.suggest_float("p0_pos", 1e-2, 1e4, log=True)
+        p0_vel = trial.suggest_float("p0_vel", 1e-4, 1e3, log=True)
+
+        model = KalmanFilter(
+            q_pos=q_pos,
+            q_vel=q_vel,
+            r_pos=r_pos,
+            p0_pos=p0_pos,
+            p0_vel=p0_vel,
+        )
+        metrics = evaluate_model_cached_numpy(model, cached_tracks)
+        return metrics["RMSE"]
+
     return objective
 
 
@@ -197,6 +221,47 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
         "trials_csv": str(csv_path),
     }, trials_df
 
+
+def run_kalman_optimization(data_dir, diagnostics_dir):
+    cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
+
+    max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
+    max_velocity_steps = max(1, int(max_velocity_steps))
+
+    sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=100, multivariate=True)
+    study = optuna.create_study(
+        study_name="kalman_val_tpe",
+        direction="minimize",
+        sampler=sampler,
+    )
+
+    study.optimize(
+        make_kalman_objective(cached_tracks),
+        n_trials=KALMAN_N_TRIALS,
+        n_jobs=1,
+        callbacks=[RMSEEarlyStoppingCallback(patience=20, min_delta=1e-4)],
+    )
+
+    trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
+    trials_df["model_key"] = "kalman"
+    trials_df["model_label"] = "Kalman"
+
+    csv_path = diagnostics_dir / "tuning_kalman_val.csv"
+    trials_df.to_csv(csv_path, index=False)
+
+    best = study.best_trial
+    return {
+        "model_key": "kalman",
+        "model_label": "Kalman",
+        "best_q_pos": float(best.params["q_pos"]),
+        "best_q_vel": float(best.params["q_vel"]),
+        "best_r_pos": float(best.params["r_pos"]),
+        "best_p0_pos": float(best.params["p0_pos"]),
+        "best_p0_vel": float(best.params["p0_vel"]),
+        "best_val_rmse": float(best.value),
+        "trials_csv": str(csv_path),
+    }, trials_df
+
 def _run_model_job(result_queue, model_key, model_label, model_cls, data_dir, diagnostics_dir):
     # mp.Process target: runs CV/CTRV tuning in a separate process
     # and puts (best_row, trials_df) into the shared queue for the main process to collect
@@ -215,6 +280,14 @@ def _run_hybrid_job(result_queue, data_dir, diagnostics_dir):
     # mp.Process target: runs hybrid tuning in a separate process
     # and puts (best_row, trials_df) into the shared queue for the main process to collect
     best_row, trials_df = run_hybrid_optimization(
+        data_dir=data_dir,
+        diagnostics_dir=diagnostics_dir,
+    )
+    result_queue.put((best_row, trials_df))
+
+
+def _run_kalman_job(result_queue, data_dir, diagnostics_dir):
+    best_row, trials_df = run_kalman_optimization(
         data_dir=data_dir,
         diagnostics_dir=diagnostics_dir,
     )
@@ -243,8 +316,8 @@ if __name__ == "__main__":
     if RUN_CTRV:
         standard_jobs.append(("ctrv", "CTRV", ConstantTurnRateVelocityModel))
 
-    if not standard_jobs and not RUN_HYBRID:
-        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_HYBRID to True.")
+    if not standard_jobs and not RUN_HYBRID and not RUN_KALMAN:
+        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_HYBRID and/or RUN_KALMAN to True.")
         raise SystemExit(0)
 
     best_rows = []
@@ -272,10 +345,23 @@ if __name__ == "__main__":
         p.start()
         processes.append(p)
 
+    if RUN_KALMAN:
+        p = mp.Process(
+            target=_run_kalman_job,
+            args=(
+                result_queue,
+                data_dir,
+                diagnostics_dir,
+            ),
+        )
+        p.start()
+        processes.append(p)
+
     for p in processes:
         p.join()
 
-    for _ in standard_jobs:
+    expected_results = len(standard_jobs) + (1 if RUN_KALMAN else 0)
+    for _ in range(expected_results):
         best_row, trials_df = result_queue.get()
         best_rows.append(best_row)
         all_trials.append(trials_df)

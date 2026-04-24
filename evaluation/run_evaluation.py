@@ -5,13 +5,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 import numpy as np
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, HybridCVCTRVModel
+from models.filters import KalmanFilter
 from evaluation.evaluator import export_predictions_for_file, _resolve_files, _read_track_file, _iter_track_groups, reconstruct_positions, _extract_month_label
 from evaluation.metrics import evaluate_trajectory
 
 #runner for evaluation *testing, not tuning
-RUN_CONSTANT_VELOCITY = True
-RUN_CTRV = True
-RUN_HYBRID = True
+RUN_CONSTANT_VELOCITY = False
+RUN_CTRV = False
+RUN_HYBRID = False
+RUN_KALMAN = True
 EVAL_SPLIT = 'test'
 CONTEXT_FILTER = None  # e.g. 'lock' or ['harbour', 'lock']
 EXPORT_PREDICTIONS = True
@@ -36,32 +38,57 @@ if __name__ == "__main__":
 
     tuned_values = _load_tuned_values(tuning_diagnostics_dir)
     cv_row = tuned_values.get("cv") or tuned_values.get("constant_velocity")
-    ctrv_row = tuned_values["ctrv"]
-    hybrid_row = tuned_values["hybrid_cv_ctrv"]
+    ctrv_row = tuned_values.get("ctrv")
+    hybrid_row = tuned_values.get("hybrid_cv_ctrv")
+    kalman_row = tuned_values.get("kalman")
 
-    cv_steps = cv_row.get("best_velocity_steps")
-    ctrv_steps = ctrv_row.get("best_velocity_steps")
-    hybrid_cv_steps = hybrid_row.get("cv_velocity_steps")
-    hybrid_ctrv_steps = hybrid_row.get("ctrv_velocity_steps")
-    hybrid_rot_steps = hybrid_row.get("best_rot_steps")
-    hybrid_rot_threshold = hybrid_row.get("best_rot_threshold")
+    cv_kwargs = {}
+    if cv_row is not None and pd.notna(cv_row.get("best_velocity_steps")):
+        cv_kwargs = {"velocity_steps": int(cv_row.get("best_velocity_steps"))}
 
-    cv_kwargs = {"velocity_steps": int(cv_steps)}
-    ctrv_kwargs = {"velocity_steps": int(ctrv_steps)}
-    hybrid_kwargs = {
-        "cv_velocity_steps": int(hybrid_cv_steps),
-        "ctrv_velocity_steps": int(hybrid_ctrv_steps),
-        "rot_steps": int(hybrid_rot_steps),
-        "rot_threshold": float(hybrid_rot_threshold),
-    }
+    ctrv_kwargs = {}
+    if ctrv_row is not None and pd.notna(ctrv_row.get("best_velocity_steps")):
+        ctrv_kwargs = {"velocity_steps": int(ctrv_row.get("best_velocity_steps"))}
+
+    hybrid_kwargs = {}
+    if hybrid_row is not None:
+        if all(pd.notna(hybrid_row.get(k)) for k in ["cv_velocity_steps", "ctrv_velocity_steps", "best_rot_steps", "best_rot_threshold"]):
+            hybrid_kwargs = {
+                "cv_velocity_steps": int(hybrid_row.get("cv_velocity_steps")),
+                "ctrv_velocity_steps": int(hybrid_row.get("ctrv_velocity_steps")),
+                "rot_steps": int(hybrid_row.get("best_rot_steps")),
+                "rot_threshold": float(hybrid_row.get("best_rot_threshold")),
+            }
+
+    kalman_kwargs = {}
+    if kalman_row is not None:
+        required = ["best_q_pos", "best_q_vel", "best_r_pos", "best_p0_pos", "best_p0_vel"]
+        if all(pd.notna(kalman_row.get(k)) for k in required):
+            kalman_kwargs = {
+                "q_pos": float(kalman_row.get("best_q_pos")),
+                "q_vel": float(kalman_row.get("best_q_vel")),
+                "r_pos": float(kalman_row.get("best_r_pos")),
+                "p0_pos": float(kalman_row.get("best_p0_pos")),
+                "p0_vel": float(kalman_row.get("best_p0_vel")),
+            }
 
     models = []
     if RUN_CONSTANT_VELOCITY:
+        if not cv_kwargs:
+            raise ValueError("CV is enabled but no tuned CV parameters were found in tuning_best_params_val.csv")
         models.append(("constant_velocity", "Constant Velocity", ConstantVelocityModel(**cv_kwargs))) #key, label, instance
     if RUN_CTRV:
+        if not ctrv_kwargs:
+            raise ValueError("CTRV is enabled but no tuned CTRV parameters were found in tuning_best_params_val.csv")
         models.append(("ctrv", "CTRV", ConstantTurnRateVelocityModel(**ctrv_kwargs)))
     if RUN_HYBRID:
+        if not hybrid_kwargs:
+            raise ValueError("Hybrid is enabled but no tuned Hybrid parameters were found in tuning_best_params_val.csv")
         models.append(("hybrid_cv_ctrv", "Hybrid CV/CTRV", HybridCVCTRVModel(**hybrid_kwargs)))
+    if RUN_KALMAN:
+        if not kalman_kwargs:
+            raise ValueError("Kalman is enabled but no tuned Kalman parameters were found in tuning_best_params_val.csv")
+        models.append(("kalman", "Kalman", KalmanFilter(**kalman_kwargs)))
 
     if not models:
         raise SystemExit(0)

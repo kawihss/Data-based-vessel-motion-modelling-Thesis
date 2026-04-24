@@ -37,12 +37,20 @@ Current baseline models:
 - `ConstantVelocityModel` (CV)
 - `ConstantTurnRateVelocityModel` (CTRV)
 - `HybridCVCTRVModel` (Hybrid)
+- `KalmanFilter` (Kalman with CV state model)
 
 CV and CTRV use one parameterization:
 
 - `velocity_steps`: number of recent context steps to average.
 
 The Hybrid model selects between CV and CTRV per track based on a rotation-rate threshold. It has additional parameters `cv_velocity_steps`, `ctrv_velocity_steps`, `rot_steps`, and `rot_threshold`.
+
+The Kalman model uses a linear constant-velocity state transition and is evaluated in two phases:
+
+- context phase: regular Kalman prediction-correction cycle with measurements,
+- prediction phase: pure model rollout without further measurement correction.
+
+Kalman tuning parameters are `q_pos`, `q_vel`, `r_pos`, `p0_pos`, `p0_vel`, and `init_velocity_steps`.
 
 **Note on Hybrid model behavior:** In practice, the Hybrid model almost always selects the CV branch, even after tuning. The rotation threshold ends up rarely triggered on this dataset, so Hybrid predictions differ from pure CV only in marginal cases. Whether to include the Hybrid model in the final thesis evaluation is still open; it adds complexity for negligible empirical gain.
 
@@ -82,6 +90,7 @@ Cached mode is used by Optuna tuning to avoid repeated disk I/O per trial.
 Purpose:
 
 - tune hyperparameters on the **validation split** for CV, CTRV, and Hybrid CV/CTRV.
+- optionally tune Kalman hyperparameters on the **validation split**.
 
 Current behavior:
 

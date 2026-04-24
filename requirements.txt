@@ -23,5 +23,6 @@ torch
 torchvision
 torchaudio
 optuna
+filterpy
 transformers
 accelerate

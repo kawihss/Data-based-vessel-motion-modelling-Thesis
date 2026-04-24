@@ -6,11 +6,13 @@ from matplotlib.widgets import Slider, Button, CheckButtons
 from pathlib import Path
 
 #this script can be used to manually inspect individual tracks
+#created with help of Claude Sonnet for interactive plotting
 
 # Globals also togglable in the GUI
 SHOW_CV = True
 SHOW_CTRV = True
 SHOW_HYBRID = True
+SHOW_KALMAN = True
 
 def load_data(source):
     if isinstance(source, pd.DataFrame):
@@ -30,6 +32,7 @@ def load_model_predictions(source_file, model_output_dir='output/08_baseline_res
         'constant_velocity': {'label': 'CV',     'color': '#ff7f0e', 'marker': 'x', 'alpha': 0.9},
         'ctrv':              {'label': 'CTRV',   'color': '#d62728', 'marker': '^', 'alpha': 0.9},
         'hybrid_cv_ctrv':    {'label': 'Hybrid', 'color': '#9467bd', 'marker': 's', 'alpha': 0.45},#overlaps, transparent
+        'kalman':            {'label': 'Kalman', 'color': '#17becf', 'marker': 'D', 'alpha': 0.45}, #overlaps, transparent
     }
 
     source_stem = Path(source_file).stem
@@ -66,6 +69,7 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
         'constant_velocity': SHOW_CV,
         'ctrv':              SHOW_CTRV,
         'hybrid_cv_ctrv':    SHOW_HYBRID,
+        'kalman':            SHOW_KALMAN,
     }
 
     fig, ax = plt.subplots(figsize=(14, 9))
@@ -163,11 +167,11 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
         fig.canvas.draw_idle()
 
     # Model toggle buttons
-    toggle_keys   = ['constant_velocity', 'ctrv', 'hybrid_cv_ctrv']
-    toggle_labels = ['CV', 'CTRV', 'Hybrid']
+    toggle_keys   = ['constant_velocity', 'ctrv', 'hybrid_cv_ctrv', 'kalman']
+    toggle_labels = ['CV', 'CTRV', 'Hybrid', 'Kalman']
     toggle_active = [visibility[k] for k in toggle_keys]
 
-    ax_check = plt.axes([0.15, 0.01, 0.30, 0.08])
+    ax_check = plt.axes([0.15, 0.01, 0.40, 0.08])
     check = CheckButtons(ax_check, toggle_labels, toggle_active)
     # Colour the check-box rectangles to match each model
     for rect, key in zip(ax_check.patches, toggle_keys):
