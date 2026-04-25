@@ -3,15 +3,17 @@ from filterpy.kalman import KalmanFilter as FilterPyKalmanFilter
 
 from .base_model import BaselineModel
 
+# Implements KF with the state vector 
+# (x, y, dx, dy) and constant velocity motion model
 
 class KalmanFilter(BaselineModel):
-	def __init__(
+	def __init__(# default values tuned on small subset of validation data
 		self,
-		q_pos=1.0,
-		q_vel=0.1,
-		r_pos=25.0,
-		p0_pos=100.0,
-		p0_vel=10.0,
+		q_pos=0.08935110590331861,
+		q_vel=0.2385816677142884,
+		r_pos=15.409457762881532,
+		p0_pos=2105.1180519608724,
+		p0_vel=0.20207122587167334,
 		dt=30.0,
 		init_velocity_steps=3,
 	):
@@ -28,7 +30,7 @@ class KalmanFilter(BaselineModel):
 		ctx = context_df.sort_values('t_utc')
 		x = ctx['x'].values
 		y = ctx['y'].values
-		rot = ctx['rot'].values if 'rot' in ctx.columns else None
+		rot = ctx['rot'].values if 'rot' in ctx.columns else None # rot not used, consistency
 		return self.predict_from_arrays(x, y, rot, n_pred_steps)
 
 	def predict_from_arrays(self, x, y, rot, n_pred_steps):
@@ -51,18 +53,19 @@ class KalmanFilter(BaselineModel):
 		kf = self._build_filter(x_valid[0], y_valid[0], v0x, v0y)
 
 		# Context phase: regular predict-update cycles with measurements.
+		# used to learn internal state and covariance , not for prediction
 		for i in range(len(x_valid)):
 			z = np.array([x_valid[i], y_valid[i]], dtype=float)
-			kf.predict()
-			kf.update(z)
+			kf.predict() #predict next state based on model
+			kf.update(z) #correct with measurement, adjust internal state and covariance
 
 		# Prediction phase: pure rollout, no measurement corrections.
 		displacements = np.zeros((n_pred_steps, 2), dtype=float)
 		prev_x, prev_y = float(kf.x[0, 0]), float(kf.x[1, 0])
 
 		for i in range(n_pred_steps):
-			kf.predict()
-			cur_x, cur_y = float(kf.x[0, 0]), float(kf.x[1, 0])
+			kf.predict() #predict next state based on model
+			cur_x, cur_y = float(kf.x[0, 0]), float(kf.x[1, 0]) #read predicted position
 			displacements[i, 0] = cur_x - prev_x
 			displacements[i, 1] = cur_y - prev_y
 			prev_x, prev_y = cur_x, cur_y
@@ -70,6 +73,7 @@ class KalmanFilter(BaselineModel):
 		return displacements
 
 	def _build_filter(self, x0, y0, v0x, v0y):
+		#see thesis text for matrix definitions
 		kf = FilterPyKalmanFilter(dim_x=4, dim_z=2)
 		kf.x = np.array([[x0], [y0], [v0x], [v0y]], dtype=float)
 

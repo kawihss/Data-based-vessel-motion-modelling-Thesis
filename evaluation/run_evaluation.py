@@ -10,9 +10,9 @@ from evaluation.evaluator import export_predictions_for_file, _resolve_files, _r
 from evaluation.metrics import evaluate_trajectory
 
 #runner for evaluation *testing, not tuning
-RUN_CONSTANT_VELOCITY = False
-RUN_CTRV = False
-RUN_HYBRID = False
+RUN_CONSTANT_VELOCITY = True
+RUN_CTRV = True
+RUN_HYBRID = True
 RUN_KALMAN = True
 EVAL_SPLIT = 'test'
 CONTEXT_FILTER = None  # e.g. 'lock' or ['harbour', 'lock']

@@ -12,13 +12,13 @@ from models.filters import KalmanFilter
 from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy
 
 CONTEXT_FILTER = None   # None = all contexts; or e.g. 'lock', or ['harbour', 'lock'] 
-RUN_CV = False
-RUN_CTRV = False
-RUN_HYBRID = False
+RUN_CV = True
+RUN_CTRV = True
+RUN_HYBRID = True
 RUN_KALMAN = True
 N_TRIALS = 15
 HYBRID_N_TRIALS = 200
-KALMAN_N_TRIALS = 80
+KALMAN_N_TRIALS = 200
 
 
 def make_objective(model_cls, cached_tracks, max_velocity_steps):
@@ -193,7 +193,7 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
         make_hybrid_objective(cached_tracks, max_velocity_steps=max_velocity_steps),
         n_trials=HYBRID_N_TRIALS,
         n_jobs=1,
-        callbacks=[RMSEEarlyStoppingCallback(patience=20, min_delta=1e-4)],
+        callbacks=[RMSEEarlyStoppingCallback(patience=30, min_delta=1e-4)],
     )
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))

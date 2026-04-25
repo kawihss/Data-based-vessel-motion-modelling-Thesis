@@ -271,6 +271,43 @@ def plot_kalman_results(df, best_params, best_rmse, model_label, output_path):
     plt.close(fig)
 
 
+def plot_convergence(df, model_label, output_path, patience=None):
+    if "state" in df.columns:
+        df = df[df["state"] == "COMPLETE"].copy()
+    if "number" not in df.columns or "value" not in df.columns or df.empty:
+        print(f"[convergence] Missing or empty trial data for {model_label}, skipping.")
+        return
+
+    df = df.sort_values("number").reset_index(drop=True)
+    df["best_so_far"] = df["value"].cummin()
+    best_idx = int(df["value"].idxmin())
+    best_trial = int(df.loc[best_idx, "number"])
+    best_rmse = float(df.loc[best_idx, "value"])
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.scatter(df["number"], df["value"], s=18, color="steelblue", alpha=0.6, zorder=3, label="Trial RMSE")
+    ax.step(df["number"], df["best_so_far"], where="post", color="crimson", linewidth=2, label="Best so far")
+    ax.axvline(best_trial, color="green", linestyle="--", linewidth=1.2,
+               label=f"Best trial ({best_trial}, RMSE={best_rmse:.4f} m)")
+
+    if patience is not None:
+        ax.axvline(best_trial + int(patience), color="orange", linestyle="--", linewidth=1.2,
+                   label=f"Early-stop trigger (patience={int(patience)})")
+
+    ax.set_xlabel("Trial", fontsize=11)
+    ax.set_ylabel("Validation RMSE  [m]", fontsize=11)
+    ax.set_title(f"{model_label} - Optuna Convergence", fontsize=13)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    x_min = int(df["number"].min()) - 1
+    x_max = int(df["number"].max()) + 1
+    ax.set_xlim(x_min, x_max)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    print(f"[convergence] Saved to {output_path}")
+    plt.close(fig)
+
+
 def plot_tuning_results():
     tuning_diagnostics_dir = Path(__file__).resolve().parent / "diagnostics"
     if not tuning_diagnostics_dir.exists():
@@ -282,9 +319,13 @@ def plot_tuning_results():
         print("[tuning] No tuning_best_params_val.csv found, skipping.")
         return
 
-    best_params = pd.read_csv(best_params_path)
+    best_params_df = pd.read_csv(best_params_path)
+    early_stop_patience = {
+        "hybrid_cv_ctrv": 20,
+        "kalman": 20,
+    }
 
-    for _, row in best_params.iterrows():
+    for _, row in best_params_df.iterrows():
         model_key = str(row.get("model_key", "")).strip().lower()
         model_label = str(row.get("model_label", model_key))
 
@@ -294,6 +335,12 @@ def plot_tuning_results():
                 print(f"[tuning] {csv_path} not found, skipping Hybrid.")
                 continue
             df = pd.read_csv(csv_path)
+            plot_convergence(
+                df=df,
+                model_label=model_label,
+                output_path=plots_dir / "tuning_hybrid_cv_ctrv_convergence.png",
+                patience=early_stop_patience.get(model_key),
+            )
             plot_path = plots_dir / "tuning_hybrid_cv_ctrv_val_plot.png"
             plot_hybrid_results(
                 df=df,
@@ -311,6 +358,12 @@ def plot_tuning_results():
                 print(f"[tuning] {csv_path} not found, skipping Kalman.")
                 continue
             df = pd.read_csv(csv_path)
+            plot_convergence(
+                df=df,
+                model_label=model_label,
+                output_path=plots_dir / "tuning_kalman_convergence.png",
+                patience=early_stop_patience.get(model_key),
+            )
             plot_path = plots_dir / "tuning_kalman_val_plot.png"
             best_params = {
                 "best_q_pos": float(row["best_q_pos"]),
@@ -332,6 +385,12 @@ def plot_tuning_results():
                 print(f"[tuning] {csv_path} not found, skipping {model_label}.")
                 continue
             df = pd.read_csv(csv_path)
+            plot_convergence(
+                df=df,
+                model_label=model_label,
+                output_path=plots_dir / f"tuning_{model_key}_convergence.png",
+                patience=early_stop_patience.get(model_key),
+            )
             plot_path = plots_dir / f"tuning_{model_key}_val_plot.png"
             plot_results(
                 df=df,
