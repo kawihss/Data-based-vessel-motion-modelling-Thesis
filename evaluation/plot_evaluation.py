@@ -20,18 +20,21 @@ PLOT_CONSTANT_VELOCITY = True
 PLOT_CTRV = True
 PLOT_HYBRID = True
 PLOT_KALMAN = True
+PLOT_CTRV_EKF = True
 
 _ALL_MODEL_LABELS = {
     "constant_velocity": "Constant Velocity",
     "ctrv": "CTRV",
     "hybrid_cv_ctrv": "Hybrid CV/CTRV",
     "kalman": "Kalman",
+    "ctrv_ekf": "CTRV EKF",
 }
 _MODEL_FLAGS = {
     "constant_velocity": PLOT_CONSTANT_VELOCITY,
     "ctrv": PLOT_CTRV,
     "hybrid_cv_ctrv": PLOT_HYBRID,
     "kalman": PLOT_KALMAN,
+    "ctrv_ekf": PLOT_CTRV_EKF,
 }
 ALL_MODEL_LABELS = {k: v for k, v in _ALL_MODEL_LABELS.items() if _MODEL_FLAGS[k]}
 
@@ -271,6 +274,41 @@ def plot_kalman_results(df, best_params, best_rmse, model_label, output_path):
     plt.close(fig)
 
 
+def plot_ctrv_ekf_results(df, best_params, best_rmse, model_label, output_path):
+    param_cols = {
+        "params_q_pos": "q_pos (process noise, position)",
+        "params_q_vel": "q_vel (process noise, velocity)",
+        "params_q_rot": "q_rot (process noise, turn rate)",
+        "params_r_pos": "r_pos (measurement noise)",
+        "params_p0_pos": "p0_pos (initial covariance, position)",
+        "params_p0_vel": "p0_vel (initial covariance, velocity)",
+        "params_p0_rot": "p0_rot (initial covariance, turn rate)",
+    }
+    available = {col: lbl for col, lbl in param_cols.items() if col in df.columns}
+    n = len(available)
+    fig, axes = plt.subplots(1, n, figsize=(4 * n, 5))
+    if n == 1:
+        axes = [axes]
+
+    for ax, (col, xlabel) in zip(axes, available.items()):
+        ax.scatter(df[col], df["value"], s=20, alpha=0.45, color="steelblue", label="All trials")
+        best_val = best_params.get(col.replace("params_", "best_"))
+        if best_val is not None:
+            ax.scatter([best_val], [best_rmse], color="crimson", marker="*", s=220, zorder=5,
+                       label=f"Best: {best_val:.3g}\nRMSE={best_rmse:.4f} m")
+        ax.set_xscale("log")
+        ax.set_xlabel(xlabel, fontsize=9)
+        ax.set_ylabel("Validation RMSE  [m]" if ax is axes[0] else "", fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8)
+
+    fig.suptitle(f"{model_label} - Hyperparameter Optimization", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    print(f"Plot saved to {output_path}")
+    plt.close(fig)
+
+
 def plot_convergence(df, model_label, output_path, patience=None):
     if "state" in df.columns:
         df = df[df["state"] == "COMPLETE"].copy()
@@ -323,6 +361,7 @@ def plot_tuning_results():
     early_stop_patience = {
         "hybrid_cv_ctrv": 20,
         "kalman": 20,
+        "ctrv_ekf": 20,
     }
 
     for _, row in best_params_df.iterrows():
@@ -373,6 +412,35 @@ def plot_tuning_results():
                 "best_p0_vel": float(row["best_p0_vel"]),
             }
             plot_kalman_results(
+                df=df,
+                best_params=best_params,
+                best_rmse=float(row["best_val_rmse"]),
+                model_label=model_label,
+                output_path=plot_path,
+            )
+        elif model_key == "ctrv_ekf":
+            csv_path = tuning_diagnostics_dir / "tuning_ctrv_ekf_val.csv"
+            if not csv_path.exists():
+                print(f"[tuning] {csv_path} not found, skipping CTRV EKF.")
+                continue
+            df = pd.read_csv(csv_path)
+            plot_convergence(
+                df=df,
+                model_label=model_label,
+                output_path=plots_dir / "tuning_ctrv_ekf_convergence.png",
+                patience=early_stop_patience.get(model_key),
+            )
+            plot_path = plots_dir / "tuning_ctrv_ekf_val_plot.png"
+            best_params = {
+                "best_q_pos": float(row["best_q_pos"]),
+                "best_q_vel": float(row["best_q_vel"]),
+                "best_q_rot": float(row["best_q_rot"]),
+                "best_r_pos": float(row["best_r_pos"]),
+                "best_p0_pos": float(row["best_p0_pos"]),
+                "best_p0_vel": float(row["best_p0_vel"]),
+                "best_p0_rot": float(row["best_p0_rot"]),
+            }
+            plot_ctrv_ekf_results(
                 df=df,
                 best_params=best_params,
                 best_rmse=float(row["best_val_rmse"]),

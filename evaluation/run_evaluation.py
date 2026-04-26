@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 import numpy as np
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, HybridCVCTRVModel
-from models.filters import KalmanFilter
+from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
 from evaluation.evaluator import export_predictions_for_file, _resolve_files, _read_track_file, _iter_track_groups, reconstruct_positions, _extract_month_label
 from evaluation.metrics import evaluate_trajectory
 
@@ -14,6 +14,7 @@ RUN_CONSTANT_VELOCITY = True
 RUN_CTRV = True
 RUN_HYBRID = True
 RUN_KALMAN = True
+RUN_CTRV_EKF = True
 EVAL_SPLIT = 'test'
 CONTEXT_FILTER = None  # e.g. 'lock' or ['harbour', 'lock']
 EXPORT_PREDICTIONS = True
@@ -41,6 +42,7 @@ if __name__ == "__main__":
     ctrv_row = tuned_values.get("ctrv")
     hybrid_row = tuned_values.get("hybrid_cv_ctrv")
     kalman_row = tuned_values.get("kalman")
+    ctrv_ekf_row = tuned_values.get("ctrv_ekf")
 
     cv_kwargs = {}
     if cv_row is not None and pd.notna(cv_row.get("best_velocity_steps")):
@@ -72,6 +74,21 @@ if __name__ == "__main__":
                 "p0_vel": float(kalman_row.get("best_p0_vel")),
             }
 
+    ctrv_ekf_kwargs = {}
+    if ctrv_ekf_row is not None:
+        required = ["best_q_pos", "best_q_vel", "best_q_rot", "best_r_pos", "best_p0_pos", "best_p0_vel", "best_p0_rot", "best_init_velocity_steps"]
+        if all(pd.notna(ctrv_ekf_row.get(k)) for k in required):
+            ctrv_ekf_kwargs = {
+                "q_pos": float(ctrv_ekf_row.get("best_q_pos")),
+                "q_vel": float(ctrv_ekf_row.get("best_q_vel")),
+                "q_rot": float(ctrv_ekf_row.get("best_q_rot")),
+                "r_pos": float(ctrv_ekf_row.get("best_r_pos")),
+                "p0_pos": float(ctrv_ekf_row.get("best_p0_pos")),
+                "p0_vel": float(ctrv_ekf_row.get("best_p0_vel")),
+                "p0_rot": float(ctrv_ekf_row.get("best_p0_rot")),
+                "init_velocity_steps": int(ctrv_ekf_row.get("best_init_velocity_steps")),
+            }
+
     models = []
     if RUN_CONSTANT_VELOCITY:
         if not cv_kwargs:
@@ -89,6 +106,10 @@ if __name__ == "__main__":
         if not kalman_kwargs:
             raise ValueError("Kalman is enabled but no tuned Kalman parameters were found in tuning_best_params_val.csv")
         models.append(("kalman", "Kalman", KalmanFilter(**kalman_kwargs)))
+    if RUN_CTRV_EKF:
+        if not ctrv_ekf_kwargs:
+            raise ValueError("CTRV EKF is enabled but no tuned CTRV EKF parameters were found in tuning_best_params_val.csv")
+        models.append(("ctrv_ekf", "CTRV EKF", CTRVExtendedKalmanFilter(**ctrv_ekf_kwargs)))
 
     if not models:
         raise SystemExit(0)

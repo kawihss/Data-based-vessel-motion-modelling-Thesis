@@ -13,6 +13,7 @@ SHOW_CV = True
 SHOW_CTRV = True
 SHOW_HYBRID = True
 SHOW_KALMAN = True
+SHOW_CTRV_EKF = True
 
 def load_data(source):
     if isinstance(source, pd.DataFrame):
@@ -33,6 +34,7 @@ def load_model_predictions(source_file, model_output_dir='output/08_baseline_res
         'ctrv':              {'label': 'CTRV',   'color': '#d62728', 'marker': '^', 'alpha': 0.9},
         'hybrid_cv_ctrv':    {'label': 'Hybrid', 'color': '#9467bd', 'marker': 's', 'alpha': 0.45},#overlaps, transparent
         'kalman':            {'label': 'Kalman', 'color': '#17becf', 'marker': 'D', 'alpha': 0.45}, #overlaps, transparent
+        'ctrv_ekf':          {'label': 'CTRV EKF', 'color': '#8c564b', 'marker': 'P', 'alpha': 0.55},
     }
 
     source_stem = Path(source_file).stem
@@ -70,6 +72,7 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
         'ctrv':              SHOW_CTRV,
         'hybrid_cv_ctrv':    SHOW_HYBRID,
         'kalman':            SHOW_KALMAN,
+        'ctrv_ekf':          SHOW_CTRV_EKF,
     }
 
     fig, ax = plt.subplots(figsize=(14, 9))
@@ -167,11 +170,11 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
         fig.canvas.draw_idle()
 
     # Model toggle buttons
-    toggle_keys   = ['constant_velocity', 'ctrv', 'hybrid_cv_ctrv', 'kalman']
-    toggle_labels = ['CV', 'CTRV', 'Hybrid', 'Kalman']
+    toggle_keys   = ['constant_velocity', 'ctrv', 'hybrid_cv_ctrv', 'kalman', 'ctrv_ekf']
+    toggle_labels = ['CV', 'CTRV', 'Hybrid', 'Kalman', 'CTRV EKF']
     toggle_active = [visibility[k] for k in toggle_keys]
 
-    ax_check = plt.axes([0.15, 0.01, 0.40, 0.08])
+    ax_check = plt.axes([0.15, 0.01, 0.50, 0.08])
     check = CheckButtons(ax_check, toggle_labels, toggle_active)
     # Colour the check-box rectangles to match each model
     for rect, key in zip(ax_check.patches, toggle_keys):

@@ -3,12 +3,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
+import numpy as np
 import optuna
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, HybridCVCTRVModel
-from models.filters import KalmanFilter
+from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
 from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy
 
 CONTEXT_FILTER = None   # None = all contexts; or e.g. 'lock', or ['harbour', 'lock'] 
@@ -16,9 +17,13 @@ RUN_CV = True
 RUN_CTRV = True
 RUN_HYBRID = True
 RUN_KALMAN = True
-N_TRIALS = 15
+RUN_CTRV_EKF = True
+N_TRIALS = 200
 HYBRID_N_TRIALS = 200
 KALMAN_N_TRIALS = 200
+CTRV_EKF_N_TRIALS = 200
+EARLY_STOPPING_PATIENCE = 50
+EARLY_STOPPING_MIN_DELTA = 1e-4
 
 
 def make_objective(model_cls, cached_tracks, max_velocity_steps):
@@ -73,6 +78,46 @@ def make_kalman_objective(cached_tracks):
     return objective
 
 
+def make_ctrv_ekf_objective(cached_tracks):
+    import time
+    def objective(trial):
+        q_pos = trial.suggest_float("q_pos", 1e-3, 1e3, log=True)
+        q_vel = trial.suggest_float("q_vel", 1e-5, 1e1, log=True)
+        q_rot = trial.suggest_float("q_rot", 1e-7, 1e1, log=True)
+        r_pos = trial.suggest_float("r_pos", 1e-2, 1e3, log=True)
+        p0_pos = trial.suggest_float("p0_pos", 1e-2, 1e4, log=True)
+        p0_vel = trial.suggest_float("p0_vel", 1e-4, 1e3, log=True)
+        p0_rot = trial.suggest_float("p0_rot", 1e-6, 1e2, log=True)
+
+        max_ctx = max(len(track['x_ctx']) for track in cached_tracks)
+        init_velocity_steps = trial.suggest_int("init_velocity_steps", 1, max(1, max_ctx))
+        model = CTRVExtendedKalmanFilter(
+            q_pos=q_pos,
+            q_vel=q_vel,
+            q_rot=q_rot,
+            r_pos=r_pos,
+            p0_pos=p0_pos,
+            p0_vel=p0_vel,
+            p0_rot=p0_rot,
+            init_velocity_steps=init_velocity_steps,
+        )
+        t0 = time.perf_counter()
+        try:
+            metrics = evaluate_model_cached_numpy(model, cached_tracks)
+            rmse = float(metrics["RMSE"])
+            elapsed = time.perf_counter() - t0
+            if elapsed > 15:
+                print(f"[CTRV EKF] trial {trial.number} slow: {elapsed:.1f}s  RMSE={rmse:.4f}")
+            if not np.isfinite(rmse):
+                return 1e12
+            return rmse
+        except (np.linalg.LinAlgError, FloatingPointError, ValueError):
+            # Keep optimization running for numerically unstable parameter sets.
+            return 1e12
+
+    return objective
+
+
 class RMSEEarlyStoppingCallback:
     #early stopping 
     def __init__(self, patience, min_delta):
@@ -82,6 +127,8 @@ class RMSEEarlyStoppingCallback:
         self.stale_trials = 0
 
     def __call__(self, study, trial):
+        if trial.value is None:
+            return
         value = float(trial.value)
         if self.best_value is None or value < (self.best_value - self.min_delta):
             self.best_value = value
@@ -91,6 +138,27 @@ class RMSEEarlyStoppingCallback:
         self.stale_trials += 1
         if self.stale_trials >= self.patience:
             study.stop()
+
+
+class TrialProgressCallback:
+    def __init__(self, model_label, total_trials, every_n=10):
+        self.model_label = str(model_label)
+        self.total_trials = int(total_trials)
+        self.every_n = max(1, int(every_n))
+        self.best_value = None
+
+    def __call__(self, study, trial):
+        value = float(trial.value) if trial.value is not None else np.nan
+        is_new_best = self.best_value is None or (np.isfinite(value) and value < self.best_value)
+        if is_new_best:
+            self.best_value = value
+
+        completed = len(study.trials)
+        should_log_periodic = (completed % self.every_n == 0) or (completed == self.total_trials)
+        if should_log_periodic or is_new_best:
+            best_str = f"{self.best_value:.4f}" if self.best_value is not None and np.isfinite(self.best_value) else "nan"
+            cur_str = f"{value:.4f}" if np.isfinite(value) else "nan"
+            print(f"[{self.model_label}] trial {completed}/{self.total_trials} | current={cur_str} | best={best_str}")
 
 
 def _load_branch_velocity_steps(diagnostics_dir):
@@ -137,6 +205,7 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
         make_objective(model_cls, cached_tracks, max_velocity_steps),
         n_trials=total,
         n_jobs=1,
+        callbacks=[TrialProgressCallback(model_label=model_label, total_trials=total, every_n=5)],
     )
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
@@ -176,7 +245,7 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
 
     seed_cv_steps, seed_ctrv_steps = _load_branch_velocity_steps(diagnostics_dir)
 
-    sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=100, multivariate=True)
+    sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=100, multivariate=False)
     study = optuna.create_study(
         study_name="hybrid_cv_ctrv_val_tpe",
         direction="minimize",
@@ -193,7 +262,10 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
         make_hybrid_objective(cached_tracks, max_velocity_steps=max_velocity_steps),
         n_trials=HYBRID_N_TRIALS,
         n_jobs=1,
-        callbacks=[RMSEEarlyStoppingCallback(patience=30, min_delta=1e-4)],
+        callbacks=[
+            RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
+            TrialProgressCallback(model_label="Hybrid CV/CTRV", total_trials=HYBRID_N_TRIALS, every_n=10),
+        ],
     )
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
@@ -228,7 +300,7 @@ def run_kalman_optimization(data_dir, diagnostics_dir):
     max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
     max_velocity_steps = max(1, int(max_velocity_steps))
 
-    sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=100, multivariate=True)
+    sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=100, multivariate=False)
     study = optuna.create_study(
         study_name="kalman_val_tpe",
         direction="minimize",
@@ -239,7 +311,10 @@ def run_kalman_optimization(data_dir, diagnostics_dir):
         make_kalman_objective(cached_tracks),
         n_trials=KALMAN_N_TRIALS,
         n_jobs=1,
-        callbacks=[RMSEEarlyStoppingCallback(patience=20, min_delta=1e-4)],
+        callbacks=[
+            RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
+            TrialProgressCallback(model_label="Kalman", total_trials=KALMAN_N_TRIALS, every_n=10),
+        ],
     )
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
@@ -260,6 +335,50 @@ def run_kalman_optimization(data_dir, diagnostics_dir):
         "best_p0_vel": float(best.params["p0_vel"]),
         "best_val_rmse": float(best.value),
         "trials_csv": str(csv_path),
+    }, trials_df
+
+
+def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
+    cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
+
+    sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=100, multivariate=False)
+    study = optuna.create_study(
+        study_name="ctrv_ekf_val_tpe",
+        direction="minimize",
+        sampler=sampler,
+    )
+
+    study.optimize(
+        make_ctrv_ekf_objective(cached_tracks),
+        n_trials=CTRV_EKF_N_TRIALS,
+        n_jobs=1,
+        callbacks=[
+            RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
+            TrialProgressCallback(model_label="CTRV EKF", total_trials=CTRV_EKF_N_TRIALS, every_n=1),
+        ],
+    )
+
+    trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
+    trials_df["model_key"] = "ctrv_ekf"
+    trials_df["model_label"] = "CTRV EKF"
+
+    csv_path = diagnostics_dir / "tuning_ctrv_ekf_val.csv"
+    trials_df.to_csv(csv_path, index=False)
+
+    best = study.best_trial
+    return {
+        "model_key": "ctrv_ekf",
+        "model_label": "CTRV EKF",
+        "best_q_pos": float(best.params["q_pos"]),
+        "best_q_vel": float(best.params["q_vel"]),
+        "best_q_rot": float(best.params["q_rot"]),
+        "best_r_pos": float(best.params["r_pos"]),
+        "best_p0_pos": float(best.params["p0_pos"]),
+        "best_p0_vel": float(best.params["p0_vel"]),
+        "best_p0_rot": float(best.params["p0_rot"]),
+        "best_val_rmse": float(best.value),
+        "trials_csv": str(csv_path),
+        "best_init_velocity_steps": int(best.params["init_velocity_steps"]),
     }, trials_df
 
 def _run_model_job(result_queue, model_key, model_label, model_cls, data_dir, diagnostics_dir):
@@ -294,6 +413,14 @@ def _run_kalman_job(result_queue, data_dir, diagnostics_dir):
     result_queue.put((best_row, trials_df))
 
 
+def _run_ctrv_ekf_job(result_queue, data_dir, diagnostics_dir):
+    best_row, trials_df = run_ctrv_ekf_optimization(
+        data_dir=data_dir,
+        diagnostics_dir=diagnostics_dir,
+    )
+    result_queue.put((best_row, trials_df))
+
+
 if __name__ == "__main__":
     # 1. Set up paths and output directories
     # 2. Launch CV and CTRV tuning as parallel processes
@@ -316,8 +443,8 @@ if __name__ == "__main__":
     if RUN_CTRV:
         standard_jobs.append(("ctrv", "CTRV", ConstantTurnRateVelocityModel))
 
-    if not standard_jobs and not RUN_HYBRID and not RUN_KALMAN:
-        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_HYBRID and/or RUN_KALMAN to True.")
+    if not standard_jobs and not RUN_HYBRID and not RUN_KALMAN and not RUN_CTRV_EKF:
+        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_HYBRID and/or RUN_KALMAN and/or RUN_CTRV_EKF to True.")
         raise SystemExit(0)
 
     best_rows = []
@@ -357,14 +484,26 @@ if __name__ == "__main__":
         p.start()
         processes.append(p)
 
-    for p in processes:
-        p.join()
+    if RUN_CTRV_EKF:
+        p = mp.Process(
+            target=_run_ctrv_ekf_job,
+            args=(
+                result_queue,
+                data_dir,
+                diagnostics_dir,
+            ),
+        )
+        p.start()
+        processes.append(p)
 
-    expected_results = len(standard_jobs) + (1 if RUN_KALMAN else 0)
+    expected_results = len(standard_jobs) + (1 if RUN_KALMAN else 0) + (1 if RUN_CTRV_EKF else 0)
     for _ in range(expected_results):
         best_row, trials_df = result_queue.get()
         best_rows.append(best_row)
         all_trials.append(trials_df)
+
+    for p in processes:
+        p.join()
 
     if best_rows:
         best_df = pd.DataFrame(best_rows)
@@ -382,9 +521,8 @@ if __name__ == "__main__":
             ),
         )
         hybrid_process.start()
-        hybrid_process.join()
-
         best_row, trials_df = result_queue.get()
+        hybrid_process.join()
         best_rows = [row for row in best_rows if row.get("model_key") != best_row["model_key"]]
         best_rows.append(best_row)
         all_trials.append(trials_df)
