@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 import numpy as np
 import optuna
+import time
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -79,7 +80,8 @@ def make_kalman_objective(cached_tracks):
 
 
 def make_ctrv_ekf_objective(cached_tracks):
-    import time
+    max_ctx = max(len(track['x_ctx']) for track in cached_tracks)
+
     def objective(trial):
         q_pos = trial.suggest_float("q_pos", 1e-3, 1e3, log=True)
         q_vel = trial.suggest_float("q_vel", 1e-5, 1e1, log=True)
@@ -89,7 +91,6 @@ def make_ctrv_ekf_objective(cached_tracks):
         p0_vel = trial.suggest_float("p0_vel", 1e-4, 1e3, log=True)
         p0_rot = trial.suggest_float("p0_rot", 1e-6, 1e2, log=True)
 
-        max_ctx = max(len(track['x_ctx']) for track in cached_tracks)
         init_velocity_steps = trial.suggest_int("init_velocity_steps", 1, max(1, max_ctx))
         model = CTRVExtendedKalmanFilter(
             q_pos=q_pos,
@@ -140,25 +141,6 @@ class RMSEEarlyStoppingCallback:
             study.stop()
 
 
-class TrialProgressCallback:
-    def __init__(self, model_label, total_trials, every_n=10):
-        self.model_label = str(model_label)
-        self.total_trials = int(total_trials)
-        self.every_n = max(1, int(every_n))
-        self.best_value = None
-
-    def __call__(self, study, trial):
-        value = float(trial.value) if trial.value is not None else np.nan
-        is_new_best = self.best_value is None or (np.isfinite(value) and value < self.best_value)
-        if is_new_best:
-            self.best_value = value
-
-        completed = len(study.trials)
-        should_log_periodic = (completed % self.every_n == 0) or (completed == self.total_trials)
-        if should_log_periodic or is_new_best:
-            best_str = f"{self.best_value:.4f}" if self.best_value is not None and np.isfinite(self.best_value) else "nan"
-            cur_str = f"{value:.4f}" if np.isfinite(value) else "nan"
-            print(f"[{self.model_label}] trial {completed}/{self.total_trials} | current={cur_str} | best={best_str}")
 
 
 def _load_branch_velocity_steps(diagnostics_dir):
@@ -205,7 +187,7 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
         make_objective(model_cls, cached_tracks, max_velocity_steps),
         n_trials=total,
         n_jobs=1,
-        callbacks=[TrialProgressCallback(model_label=model_label, total_trials=total, every_n=5)],
+        callbacks=[RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA)],
     )
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
@@ -264,7 +246,6 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
         n_jobs=1,
         callbacks=[
             RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
-            TrialProgressCallback(model_label="Hybrid CV/CTRV", total_trials=HYBRID_N_TRIALS, every_n=10),
         ],
     )
 
@@ -297,9 +278,6 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
 def run_kalman_optimization(data_dir, diagnostics_dir):
     cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
 
-    max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
-    max_velocity_steps = max(1, int(max_velocity_steps))
-
     sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=100, multivariate=False)
     study = optuna.create_study(
         study_name="kalman_val_tpe",
@@ -313,7 +291,6 @@ def run_kalman_optimization(data_dir, diagnostics_dir):
         n_jobs=1,
         callbacks=[
             RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
-            TrialProgressCallback(model_label="Kalman", total_trials=KALMAN_N_TRIALS, every_n=10),
         ],
     )
 
@@ -354,7 +331,6 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
         n_jobs=1,
         callbacks=[
             RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
-            TrialProgressCallback(model_label="CTRV EKF", total_trials=CTRV_EKF_N_TRIALS, every_n=1),
         ],
     )
 

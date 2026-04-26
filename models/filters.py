@@ -152,7 +152,7 @@ class KalmanFilter(BaselineModel):
 class CTRVExtendedKalmanFilter(BaselineModel):
 	# Similar to KalmanFilter but with CTRV motion model and state vector (x, y, dx, dy, dpsi).
 	# not using library 
-	def __init__( # todo: 
+	def __init__( # results of tuning on small subset of validation data
 		self,
 		q_pos=4.12068400231886,
 		q_vel=0.005776275613820111,

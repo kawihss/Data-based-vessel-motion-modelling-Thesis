@@ -70,6 +70,7 @@ class ConstantTurnRateVelocityModel(BaselineModel):
         # Nautical ROT is clockwise-positive, while math rotation is opposite
         dpsi_deg = -rot_deg_per_min * (dt / 60.0)
         dpsi_rad = np.deg2rad(dpsi_deg)
+        alpha = dpsi_rad * dt
         cos_dpsi = np.cos(dpsi_rad)
         sin_dpsi = np.sin(dpsi_rad)
 
@@ -78,8 +79,16 @@ class ConstantTurnRateVelocityModel(BaselineModel):
         cur_dy = float(mean_dy)
 
         for i in range(n_pred_steps):
-            displacements[i, 0] = cur_dx
-            displacements[i, 1] = cur_dy
+            #displacements[i, 0] = cur_dx
+            #displacements[i, 1] = cur_dy
+
+            #arc-based displacement calculation to avoid accumulating rotation errors over time
+            if abs(dpsi_rad) > 1e-6:
+                displacements[i, 0] = (cur_dx * np.sin(alpha) + cur_dy * (np.cos(alpha) - 1)) / dpsi_rad
+                displacements[i, 1] = (cur_dy * np.sin(alpha) - cur_dx * (np.cos(alpha) - 1)) / dpsi_rad
+            else:
+                displacements[i, 0] = cur_dx * dt
+                displacements[i, 1] = cur_dy * dt
 
             # Rotate the velocity vector for the next step
             next_dx = cur_dx * cos_dpsi - cur_dy * sin_dpsi
