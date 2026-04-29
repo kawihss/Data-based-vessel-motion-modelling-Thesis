@@ -6,9 +6,12 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+from scipy.interpolate import PchipInterpolator
 
 # Global resampling frequencies (seconds)
 GERMAN_FREQ_S = 30
+SPATIAL_INTERPOLATION_METHOD = 'pchip' 
+# 'time' for time-based linear interpolation, 'spline' for spline interpolation (fallback to time if <4 points), 'pchip' for shape-preserving piecewise cubic interpolation (fallback to time if <2 points)
 
 
 def split_long_gaps(df: pd.DataFrame, max_gap_s: int) -> pd.DataFrame:
@@ -48,6 +51,38 @@ def filter_unrealistic_rot(df: pd.DataFrame, max_rot=90.0) -> pd.DataFrame:
     return df[mask].reset_index(drop=True)
 
 
+def interpolate_spatial_columns(g: pd.DataFrame, g_resampled: pd.DataFrame, spatial_cols: list[str]) -> None:
+    if not spatial_cols:
+        return
+
+    if SPATIAL_INTERPOLATION_METHOD == 'time':
+        g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(method='time')
+        return
+
+    if SPATIAL_INTERPOLATION_METHOD == 'spline':
+        method = 'spline' if len(g) >= 4 else 'time'
+        g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(
+            method=method, order=3
+        )
+        return
+
+    if SPATIAL_INTERPOLATION_METHOD != 'pchip':
+        raise ValueError(f"Unknown spatial interpolation method: {SPATIAL_INTERPOLATION_METHOD}")
+
+    if len(g) < 2:
+        g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(method='time')
+        return
+
+    base_time = g.index[0]
+    source_seconds = (g.index - base_time).total_seconds().to_numpy(dtype=float)
+    target_seconds = (g_resampled.index - base_time).total_seconds().to_numpy(dtype=float)
+
+    for col in spatial_cols:
+        source_values = g[col].to_numpy(dtype=float)
+        interpolator = PchipInterpolator(source_seconds, source_values)
+        g_resampled[col] = interpolator(target_seconds)
+
+
 def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
     #Resample all vessel trajectories in df to fixed freq_s using time-linear interpolation
     df = split_long_gaps(df, max_gap_s=3 * freq_s)
@@ -78,11 +113,7 @@ def resample_dataset(df: pd.DataFrame, freq_s: int) -> pd.DataFrame:
         non_spatial_cols = [c for c in num_cols if c not in spatial_cols]
 
         if spatial_cols:
-            method = 'spline' if len(g) >= 4 else 'time'
-            g_resampled[spatial_cols] = g_resampled[spatial_cols].interpolate(#we might get a warning for sparse marinecadastra
-            # when points are coliniear. can be ignored, fallback is time interpolation which will work but be less smooth.
-                method= method, order=3
-            )
+            interpolate_spatial_columns(g, g_resampled, spatial_cols)
         if non_spatial_cols:
             g_resampled[non_spatial_cols] = g_resampled[non_spatial_cols].interpolate(
                 method='time'

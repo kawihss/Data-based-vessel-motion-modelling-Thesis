@@ -5,6 +5,7 @@ scipy
 requests
 joblib
 tqdm
+pyyaml
 
 #coordinates
 pyproj
@@ -16,11 +17,14 @@ shapely
 scikit-learn
 matplotlib
 seaborn
+pyarrow
+cmaes
 
 
 torch
 torchvision
 torchaudio
 optuna
+filterpy
 transformers
 accelerate

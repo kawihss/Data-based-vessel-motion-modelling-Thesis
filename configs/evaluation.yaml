@@ -1,0 +1,47 @@
+run:
+  name: default
+  description: default evaluation run
+  seed: 42
+  sample_pct: 10 #of 100
+
+sampling:
+  tuning_validation_pct: 10 #of 100
+  evaluation_pct: 10 #of 100
+
+paths:
+  baseline_root: output/08_baseline_results
+
+data:
+  parquet_dir: output/07_parquet
+  split: test
+  context_filter_tuning: river
+  context_filter_evaluation: river
+
+evaluation:
+  export_predictions: true
+
+models:
+  cv: true
+  ctrv: true
+  ctrv_arc: true
+  hybrid: true
+  kalman: true
+  ctrv_ekf: true
+
+tuning:
+  n_trials_standard: 200
+  n_trials_hybrid: 200
+  n_trials_kalman: 200
+  n_trials_ctrv_ekf: 200
+  early_stopping_patience: 50
+  early_stopping_min_delta: 0.0001
+
+plotting:
+  step_duration_s: 30
+  models:
+    constant_velocity: true
+    ctrv: true
+    ctrv_arc: true
+    hybrid_cv_ctrv: true
+    kalman: true
+    ctrv_ekf: true
