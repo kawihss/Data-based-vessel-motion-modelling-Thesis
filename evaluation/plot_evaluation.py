@@ -27,6 +27,7 @@ PLOT_CTRV_ARC = bool(PLOT_FLAGS["ctrv_arc"])
 PLOT_HYBRID = bool(PLOT_FLAGS["hybrid_cv_ctrv"])
 PLOT_KALMAN = bool(PLOT_FLAGS["kalman"])
 PLOT_CTRV_EKF = bool(PLOT_FLAGS["ctrv_ekf"])
+PLOT_TIREX_LSTM = bool(PLOT_FLAGS["tirex_lstm"])
 
 _ALL_MODEL_LABELS = {
     "constant_velocity": "Constant Velocity",
@@ -35,6 +36,7 @@ _ALL_MODEL_LABELS = {
     "hybrid_cv_ctrv": "Hybrid CV/CTRV",
     "kalman": "Kalman",
     "ctrv_ekf": "CTRV EKF",
+    "tirex_lstm": "TiRex LSTM",
 }
 _MODEL_FLAGS = {
     "constant_velocity": PLOT_CONSTANT_VELOCITY,
@@ -43,6 +45,7 @@ _MODEL_FLAGS = {
     "hybrid_cv_ctrv": PLOT_HYBRID,
     "kalman": PLOT_KALMAN,
     "ctrv_ekf": PLOT_CTRV_EKF,
+    "tirex_lstm": PLOT_TIREX_LSTM,
 }
 ALL_MODEL_LABELS = {k: v for k, v in _ALL_MODEL_LABELS.items() if _MODEL_FLAGS[k]}
 

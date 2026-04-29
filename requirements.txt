@@ -28,3 +28,4 @@ optuna
 filterpy
 transformers
 accelerate
+tirex-ts

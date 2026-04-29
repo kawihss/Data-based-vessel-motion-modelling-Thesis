@@ -10,7 +10,7 @@ from .runtime_config import subsample_items
 CONTEXT_LABELS = {'river', 'channel', 'harbour', 'lock', 'unknown'}
 MONTH_PATTERN = re.compile(r"(\d{4})-(\d{2})_\d{2}$")
 
-TRACK_USECOLS = ['track_id', 'role', 't_utc', 'x', 'y', 'rot', 'vessel_id', 'context']
+TRACK_USECOLS = ['track_id', 'role', 't_utc', 'x', 'y', 'rot', 'vessel_id', 'context', 'dx_norm', 'dy_norm']
 
 #internal functions marked _name
 
@@ -87,12 +87,16 @@ def load_tracks_cached_numpy(data_dir, split='test', context_filter=None, sample
             x_ctx = ctx['x'].to_numpy(dtype=float, copy=True)
             y_ctx = ctx['y'].to_numpy(dtype=float, copy=True)
             rot_ctx = ctx['rot'].to_numpy(dtype=float, copy=True)
+            dx_norm_ctx = ctx['dx_norm'].to_numpy(dtype=float, copy=True)
+            dy_norm_ctx = ctx['dy_norm'].to_numpy(dtype=float, copy=True)
             true_xy = pred[['x', 'y']].to_numpy(dtype=float, copy=True)
 
             cached_tracks.append({
                 'x_ctx': x_ctx,
                 'y_ctx': y_ctx,
                 'rot_ctx': rot_ctx,
+                'dx_norm_ctx': dx_norm_ctx,
+                'dy_norm_ctx': dy_norm_ctx,
                 'last_x': float(x_ctx[-1]),
                 'last_y': float(y_ctx[-1]),
                 'true_xy': true_xy,
@@ -245,12 +249,15 @@ def evaluate_model_cached_numpy(model, cached_tracks):
         if n_pred_steps <= 0:
             continue
 
-        displacements = model.predict_from_arrays(
-            track['x_ctx'],
-            track['y_ctx'],
-            track['rot_ctx'],
-            n_pred_steps,
-        )
+        if hasattr(model, 'predict_from_cached_track'):
+            displacements = model.predict_from_cached_track(track, n_pred_steps)
+        else:
+            displacements = model.predict_from_arrays(
+                track['x_ctx'],
+                track['y_ctx'],
+                track['rot_ctx'],
+                n_pred_steps,
+            )
         pred_positions = reconstruct_positions(track['last_x'], track['last_y'], displacements)
         true_positions = track['true_xy']
 

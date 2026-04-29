@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, ConstantTurnRateVelocityArcModel, HybridCVCTRVModel
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
+from models.sequence import TirexLSTMModel
 from evaluation.evaluator import export_predictions_for_file, _resolve_files, _read_track_file, _iter_track_groups, reconstruct_positions, _extract_month_label
 from evaluation.metrics import evaluate_trajectory
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths, update_latest_run_pointer, write_run_metadata, get_sampling_value, subsample_items
@@ -20,6 +21,15 @@ RUN_CTRV_ARC = bool(CONFIG["models"]["ctrv_arc"])
 RUN_HYBRID = bool(CONFIG["models"]["hybrid"])
 RUN_KALMAN = bool(CONFIG["models"]["kalman"])
 RUN_CTRV_EKF = bool(CONFIG["models"]["ctrv_ekf"])
+RUN_TIREX_LSTM = bool(CONFIG["models"]["tirex_lstm"])
+TIREX_CFG = CONFIG["models"].get("tirex", {})
+TIREX_MODEL_NAME = str(TIREX_CFG.get("model_name", "NX-AI/TiRex"))
+TIREX_DEVICE = TIREX_CFG.get("device", None)
+TIREX_DEVICE = None if TIREX_DEVICE is None else (str(TIREX_DEVICE).strip() or None)
+TIREX_BACKEND = str(TIREX_CFG.get("backend", "torch"))
+TIREX_COMPILE_MODEL = bool(TIREX_CFG.get("compile_model", False))
+TIREX_SCALER_PATH = TIREX_CFG.get("scaler_path", "output/05_normalized/scalers.pkl")
+TIREX_SCALER_PATH = str(TIREX_SCALER_PATH).strip() if TIREX_SCALER_PATH is not None else "output/05_normalized/scalers.pkl"
 EVAL_SPLIT = str(CONFIG["data"]["split"])
 CONTEXT_FILTER_EVALUATION = CONFIG["data"]["context_filter_evaluation"]
 EXPORT_PREDICTIONS = bool(CONFIG["evaluation"]["export_predictions"])
@@ -60,6 +70,7 @@ if __name__ == "__main__":
     hybrid_row = tuned_values.get("hybrid_cv_ctrv")
     kalman_row = tuned_values.get("kalman")
     ctrv_ekf_row = tuned_values.get("ctrv_ekf")
+    tirex_row = tuned_values.get("tirex_lstm")
 
     cv_kwargs = {}
     if cv_row is not None and pd.notna(cv_row.get("best_velocity_steps")):
@@ -110,6 +121,17 @@ if __name__ == "__main__":
                 "init_velocity_steps": int(ctrv_ekf_row.get("best_init_velocity_steps")),
             }
 
+    tirex_kwargs = {}
+    if tirex_row is not None and pd.notna(tirex_row.get("best_velocity_steps")):
+        tirex_kwargs = {
+            "velocity_steps": int(tirex_row.get("best_velocity_steps")),
+            "model_name": TIREX_MODEL_NAME,
+            "device": TIREX_DEVICE,
+            "backend": TIREX_BACKEND,
+            "compile_model": TIREX_COMPILE_MODEL,
+            "scaler_path": str(PROJECT_ROOT / TIREX_SCALER_PATH),
+        }
+
     models = []
     if RUN_CONSTANT_VELOCITY:
         if not cv_kwargs:
@@ -135,6 +157,10 @@ if __name__ == "__main__":
         if not ctrv_ekf_kwargs:
             raise ValueError("CTRV EKF is enabled but no tuned CTRV EKF parameters were found in tuning_best_params_val.csv")
         models.append(("ctrv_ekf", "CTRV EKF", CTRVExtendedKalmanFilter(**ctrv_ekf_kwargs)))
+    if RUN_TIREX_LSTM:
+        if not tirex_kwargs:
+            raise ValueError("TiRex LSTM is enabled but no tuned TiRex LSTM parameters were found in tuning_best_params_val.csv")
+        models.append(("tirex_lstm", "TiRex LSTM", TirexLSTMModel(**tirex_kwargs)))
 
     if not models:
         raise SystemExit(0)

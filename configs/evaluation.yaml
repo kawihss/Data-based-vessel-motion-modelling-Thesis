@@ -1,12 +1,12 @@
 run:
-  name: default
-  description: default evaluation run
+  name: tryx trex
+  description: first try
   seed: 42
-  sample_pct: 10 #of 100
+  sample_pct: 1 #of 100
 
 sampling:
-  tuning_validation_pct: 10 #of 100
-  evaluation_pct: 10 #of 100
+  tuning_validation_pct: 1 #of 100
+  evaluation_pct: 1 #of 100
 
 paths:
   baseline_root: output/08_baseline_results
@@ -22,14 +22,22 @@ evaluation:
 
 models:
   cv: true
-  ctrv: true
-  ctrv_arc: true
-  hybrid: true
-  kalman: true
-  ctrv_ekf: true
+  ctrv: false
+  ctrv_arc: false
+  hybrid: false
+  kalman: false
+  ctrv_ekf: false
+  tirex_lstm: true
+  tirex:
+    model_name: NX-AI/TiRex
+    device: null # null-> auto-detect, or specify "cpu" or "cuda"
+    backend: torch # torch as fallback for windows, use cuda on linux, recommended and faster
+    compile_model: false
+    scaler_path: output/05_normalized/scalers.pkl
 
 tuning:
-  n_trials_standard: 200
+  n_trials_standard: 30
+  n_trials_tirex: 1
   n_trials_hybrid: 200
   n_trials_kalman: 200
   n_trials_ctrv_ekf: 200
@@ -40,8 +48,9 @@ plotting:
   step_duration_s: 30
   models:
     constant_velocity: true
-    ctrv: true
-    ctrv_arc: true
-    hybrid_cv_ctrv: true
-    kalman: true
-    ctrv_ekf: true
+    ctrv: false
+    ctrv_arc: false
+    hybrid_cv_ctrv: false
+    kalman: false
+    ctrv_ekf: false
+    tirex_lstm: true
