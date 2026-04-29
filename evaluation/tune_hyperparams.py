@@ -17,7 +17,7 @@ from evaluation.runtime_config import load_runtime_config, resolve_run_paths, up
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG = load_runtime_config(PROJECT_ROOT)
 
-CONTEXT_FILTER = CONFIG["data"]["context_filter"]
+CONTEXT_FILTER_TUNING = CONFIG["data"]["context_filter_tuning"]
 RUN_CV = bool(CONFIG["models"]["cv"])
 RUN_CTRV = bool(CONFIG["models"]["ctrv"])
 RUN_CTRV_ARC = bool(CONFIG["models"]["ctrv_arc"])
@@ -184,7 +184,7 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
     cached_tracks = load_tracks_cached_numpy(
         data_dir,
         split='val',
-        context_filter=CONTEXT_FILTER,
+        context_filter=CONTEXT_FILTER_TUNING,
         sample_pct=TUNING_VALIDATION_PCT,
         seed=SEED,
     )
@@ -241,7 +241,7 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
     cached_tracks = load_tracks_cached_numpy(
         data_dir,
         split='val',
-        context_filter=CONTEXT_FILTER,
+        context_filter=CONTEXT_FILTER_TUNING,
         sample_pct=TUNING_VALIDATION_PCT,
         seed=SEED,
     )
@@ -305,7 +305,7 @@ def run_kalman_optimization(data_dir, diagnostics_dir):
     cached_tracks = load_tracks_cached_numpy(
         data_dir,
         split='val',
-        context_filter=CONTEXT_FILTER,
+        context_filter=CONTEXT_FILTER_TUNING,
         sample_pct=TUNING_VALIDATION_PCT,
         seed=SEED,
     )
@@ -353,7 +353,7 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
     cached_tracks = load_tracks_cached_numpy(
         data_dir,
         split='val',
-        context_filter=CONTEXT_FILTER,
+        context_filter=CONTEXT_FILTER_TUNING,
         sample_pct=TUNING_VALIDATION_PCT,
         seed=SEED,
     )

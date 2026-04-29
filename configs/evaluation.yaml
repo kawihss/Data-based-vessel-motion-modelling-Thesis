@@ -2,11 +2,11 @@ run:
   name: default
   description: default evaluation run
   seed: 42
-  sample_pct: 1 #of 100
+  sample_pct: 10 #of 100
 
 sampling:
-  tuning_validation_pct: 1 #of 100
-  evaluation_pct: 1 #of 100
+  tuning_validation_pct: 10 #of 100
+  evaluation_pct: 10 #of 100
 
 paths:
   baseline_root: output/08_baseline_results
@@ -14,7 +14,8 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter: null
+  context_filter_tuning: river
+  context_filter_evaluation: river
 
 evaluation:
   export_predictions: true

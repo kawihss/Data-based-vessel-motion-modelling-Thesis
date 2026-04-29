@@ -21,7 +21,7 @@ RUN_HYBRID = bool(CONFIG["models"]["hybrid"])
 RUN_KALMAN = bool(CONFIG["models"]["kalman"])
 RUN_CTRV_EKF = bool(CONFIG["models"]["ctrv_ekf"])
 EVAL_SPLIT = str(CONFIG["data"]["split"])
-CONTEXT_FILTER = CONFIG["data"]["context_filter"]
+CONTEXT_FILTER_EVALUATION = CONFIG["data"]["context_filter_evaluation"]
 EXPORT_PREDICTIONS = bool(CONFIG["evaluation"]["export_predictions"])
 SEED = int(CONFIG["run"]["seed"])
 SAMPLE_PCT = int(CONFIG["run"]["sample_pct"])
@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     comparison_rows = []
     data_dir = PROJECT_ROOT / CONFIG["data"]["parquet_dir"]
-    files = _resolve_files(data_dir, EVAL_SPLIT, CONTEXT_FILTER)
+    files = _resolve_files(data_dir, EVAL_SPLIT, CONTEXT_FILTER_EVALUATION)
     files = subsample_items(files, sample_pct=EVALUATION_PCT, seed=SEED)
     total_models = len(models)
     total_files = len(files)
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     print(
         f"Evaluating {total_models} model(s) on {total_files} file(s) "
         f"for split '{EVAL_SPLIT}'"
-        + (f", context(s) {CONTEXT_FILTER}" if CONTEXT_FILTER else "")
+        + (f", context(s) {CONTEXT_FILTER_EVALUATION}" if CONTEXT_FILTER_EVALUATION else "")
     )
 
     # Load all parquet files into memory ONCE

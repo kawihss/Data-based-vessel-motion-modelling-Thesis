@@ -109,7 +109,8 @@ def write_run_metadata(paths, cfg, stage):
         },
         "data": {
             "split": cfg["data"]["split"],
-            "context_filter": cfg["data"]["context_filter"],
+            "context_filter_tuning": cfg["data"]["context_filter_tuning"],
+            "context_filter_evaluation": cfg["data"]["context_filter_evaluation"],
         },
         "sampling": {
             "tuning_validation_pct": int(get_sampling_value(cfg, "tuning_validation_pct")),

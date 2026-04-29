@@ -22,10 +22,30 @@ SHOW_KALMAN = True
 SHOW_CTRV_EKF = True
 
 
+def _has_prediction_files_for_stem(model_output_dir, source_stem):
+    model_output_dir = Path(model_output_dir)
+    return any(model_output_dir.glob(f"{source_stem}__*.csv"))
+
+
+def _first_predicted_parquet(project_root, config, model_output_dir):
+    parquet_dir = project_root / str(config["data"]["parquet_dir"])
+    for pred_path in sorted(Path(model_output_dir).glob("*__*.csv")):
+        source_stem = pred_path.name.split("__", 1)[0]
+        candidate = parquet_dir / f"{source_stem}.parquet"
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _select_source_file(project_root, config, model_output_dir, preferred_source_file):
     preferred_source_file = Path(preferred_source_file)
-    if preferred_source_file.exists():
+    if preferred_source_file.exists() and _has_prediction_files_for_stem(model_output_dir, preferred_source_file.stem):
         return preferred_source_file
+
+    if preferred_source_file.exists():
+        print(
+            f"[visualizer] Preferred source file exists but has no predictions in run output: {preferred_source_file}"
+        )
 
     parquet_dir = project_root / str(config["data"]["parquet_dir"])
 
@@ -258,4 +278,16 @@ if __name__ == "__main__":
 
     df = load_data(source_file)
     model_predictions, model_specs = load_model_predictions(source_file, model_output_dir=model_output_dir)
+
+    if not model_predictions:
+        fallback_source = _first_predicted_parquet(project_root, config, model_output_dir)
+        if fallback_source is not None and fallback_source != source_file:
+            print(f"[visualizer] No predictions found for selected source; retrying with: {fallback_source}")
+            source_file = fallback_source
+            df = load_data(source_file)
+            model_predictions, model_specs = load_model_predictions(source_file, model_output_dir=model_output_dir)
+
+    print(f"[visualizer] Source file: {source_file}")
+    print(f"[visualizer] Loaded prediction models: {sorted(model_predictions.keys())}")
+
     create_interactive_plot(df, model_predictions=model_predictions, model_specs=model_specs)
