@@ -122,7 +122,7 @@ class ConstantTurnRateVelocityArcModel(BaselineModel):
 
         dpsi_deg = -rot_deg_per_min * (dt / 60.0)
         dpsi_rad = np.deg2rad(dpsi_deg)
-        alpha = dpsi_rad * dt
+        alpha = dpsi_rad #* dt
         cos_dpsi = np.cos(dpsi_rad)
         sin_dpsi = np.sin(dpsi_rad)
 
@@ -135,8 +135,8 @@ class ConstantTurnRateVelocityArcModel(BaselineModel):
                 displacements[i, 0] = (cur_dx * np.sin(alpha) + cur_dy * (np.cos(alpha) - 1)) / dpsi_rad
                 displacements[i, 1] = (cur_dy * np.sin(alpha) - cur_dx * (np.cos(alpha) - 1)) / dpsi_rad
             else:
-                displacements[i, 0] = cur_dx * dt
-                displacements[i, 1] = cur_dy * dt
+                displacements[i, 0] = cur_dx #* dt
+                displacements[i, 1] = cur_dy #* dt
 
             next_dx = cur_dx * cos_dpsi - cur_dy * sin_dpsi
             next_dy = cur_dx * sin_dpsi + cur_dy * cos_dpsi

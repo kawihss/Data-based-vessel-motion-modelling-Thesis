@@ -10,18 +10,23 @@ import matplotlib.ticker as mticker
 import numpy as np
 
 from evaluation.evaluator import plot_horizon_error
+from evaluation.runtime_config import load_runtime_config, resolve_run_paths
 
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CONFIG = load_runtime_config(PROJECT_ROOT)
 
 # Config
-EVAL_SPLIT = "test"
-STEP_DURATION_S = 30  # seconds per prediction step
+EVAL_SPLIT = str(CONFIG["data"]["split"])
+STEP_DURATION_S = int(CONFIG["plotting"]["step_duration_s"])
 
-PLOT_CONSTANT_VELOCITY = True
-PLOT_CTRV = False
-PLOT_CTRV_ARC = False
-PLOT_HYBRID = True
-PLOT_KALMAN = True
-PLOT_CTRV_EKF = True
+PLOT_FLAGS = CONFIG["plotting"]["models"]
+PLOT_CONSTANT_VELOCITY = bool(PLOT_FLAGS["constant_velocity"])
+PLOT_CTRV = bool(PLOT_FLAGS["ctrv"])
+PLOT_CTRV_ARC = bool(PLOT_FLAGS["ctrv_arc"])
+PLOT_HYBRID = bool(PLOT_FLAGS["hybrid_cv_ctrv"])
+PLOT_KALMAN = bool(PLOT_FLAGS["kalman"])
+PLOT_CTRV_EKF = bool(PLOT_FLAGS["ctrv_ekf"])
 
 _ALL_MODEL_LABELS = {
     "constant_velocity": "Constant Velocity",
@@ -43,10 +48,17 @@ ALL_MODEL_LABELS = {k: v for k, v in _ALL_MODEL_LABELS.items() if _MODEL_FLAGS[k
 
 METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]  # columns expected in per-month CSVs
 
-project_root = Path(__file__).resolve().parent.parent
-baseline_output_dir = project_root / "output" / "08_baseline_results"
-diagnostics_dir = baseline_output_dir / "diagnostics"
-plots_dir = baseline_output_dir / "plots"
+run_paths = resolve_run_paths(PROJECT_ROOT, CONFIG, create=False)
+selected_run_dir = run_paths["run_dir"]
+if not selected_run_dir.exists():
+    raise FileNotFoundError(
+        f"Configured run directory not found: {selected_run_dir}. "
+        "Set run.name in configs/evaluation.yaml to an existing run or execute run_evaluation.py first."
+    )
+
+diagnostics_dir = selected_run_dir / "diagnostics"
+plots_dir = selected_run_dir / "plots"
+tuning_diagnostics_dir = selected_run_dir / "tuning"
 plots_dir.mkdir(parents=True, exist_ok=True)
 
 
@@ -312,7 +324,7 @@ def plot_ctrv_ekf_results(df, best_params, best_rmse, model_label, output_path):
     plt.close(fig)
 
 
-def plot_convergence(df, model_label, output_path, patience=None):
+def plot_convergence(df, model_label, output_path):
     if "state" in df.columns:
         df = df[df["state"] == "COMPLETE"].copy()
     if "number" not in df.columns or "value" not in df.columns or df.empty:
@@ -331,10 +343,6 @@ def plot_convergence(df, model_label, output_path, patience=None):
     ax.axvline(best_trial, color="green", linestyle="--", linewidth=1.2,
                label=f"Best trial ({best_trial}, RMSE={best_rmse:.4f} m)")
 
-    if patience is not None:
-        ax.axvline(best_trial + int(patience), color="orange", linestyle="--", linewidth=1.2,
-                   label=f"Early-stop trigger (patience={int(patience)})")
-
     ax.set_xlabel("Trial", fontsize=11)
     ax.set_ylabel("Validation RMSE  [m]", fontsize=11)
     ax.set_title(f"{model_label} - Optuna Convergence", fontsize=13)
@@ -350,7 +358,6 @@ def plot_convergence(df, model_label, output_path, patience=None):
 
 
 def plot_tuning_results():
-    tuning_diagnostics_dir = Path(__file__).resolve().parent / "diagnostics"
     if not tuning_diagnostics_dir.exists():
         print("[tuning] No tuning diagnostics directory found, skipping.")
         return
@@ -361,12 +368,6 @@ def plot_tuning_results():
         return
 
     best_params_df = pd.read_csv(best_params_path)
-    early_stop_patience = {
-        "hybrid_cv_ctrv": 20,
-        "kalman": 20,
-        "ctrv_ekf": 20,
-    }
-
     for _, row in best_params_df.iterrows():
         model_key = str(row.get("model_key", "")).strip().lower()
         model_label = str(row.get("model_label", model_key))
@@ -381,7 +382,6 @@ def plot_tuning_results():
                 df=df,
                 model_label=model_label,
                 output_path=plots_dir / "tuning_hybrid_cv_ctrv_convergence.png",
-                patience=early_stop_patience.get(model_key),
             )
             plot_path = plots_dir / "tuning_hybrid_cv_ctrv_val_plot.png"
             plot_hybrid_results(
@@ -404,7 +404,6 @@ def plot_tuning_results():
                 df=df,
                 model_label=model_label,
                 output_path=plots_dir / "tuning_kalman_convergence.png",
-                patience=early_stop_patience.get(model_key),
             )
             plot_path = plots_dir / "tuning_kalman_val_plot.png"
             best_params = {
@@ -431,7 +430,6 @@ def plot_tuning_results():
                 df=df,
                 model_label=model_label,
                 output_path=plots_dir / "tuning_ctrv_ekf_convergence.png",
-                patience=early_stop_patience.get(model_key),
             )
             plot_path = plots_dir / "tuning_ctrv_ekf_val_plot.png"
             best_params = {
@@ -460,7 +458,6 @@ def plot_tuning_results():
                 df=df,
                 model_label=model_label,
                 output_path=plots_dir / f"tuning_{model_key}_convergence.png",
-                patience=early_stop_patience.get(model_key),
             )
             plot_path = plots_dir / f"tuning_{model_key}_val_plot.png"
             plot_results(
@@ -474,6 +471,7 @@ def plot_tuning_results():
 
 
 if __name__ == "__main__":
+    print(f"Using configured run directory: {selected_run_dir}")
     print(f"Reading diagnostics from: {diagnostics_dir}")
     print(f"Saving plots to: {plots_dir}\n")
 

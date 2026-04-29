@@ -12,20 +12,29 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, ConstantTurnRateVelocityArcModel, HybridCVCTRVModel
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
 from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy
+from evaluation.runtime_config import load_runtime_config, resolve_run_paths, update_latest_run_pointer, write_run_metadata, get_sampling_value
 
-CONTEXT_FILTER = None   # None = all contexts; or e.g. 'lock', or ['harbour', 'lock'] 
-RUN_CV = True
-RUN_CTRV = True
-RUN_CTRV_ARC = True
-RUN_HYBRID = True
-RUN_KALMAN = True
-RUN_CTRV_EKF = True
-N_TRIALS = 200
-HYBRID_N_TRIALS = 200
-KALMAN_N_TRIALS = 200
-CTRV_EKF_N_TRIALS = 200
-EARLY_STOPPING_PATIENCE = 50
-EARLY_STOPPING_MIN_DELTA = 1e-4
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CONFIG = load_runtime_config(PROJECT_ROOT)
+
+CONTEXT_FILTER = CONFIG["data"]["context_filter"]
+RUN_CV = bool(CONFIG["models"]["cv"])
+RUN_CTRV = bool(CONFIG["models"]["ctrv"])
+RUN_CTRV_ARC = bool(CONFIG["models"]["ctrv_arc"])
+RUN_HYBRID = bool(CONFIG["models"]["hybrid"])
+RUN_KALMAN = bool(CONFIG["models"]["kalman"])
+RUN_CTRV_EKF = bool(CONFIG["models"]["ctrv_ekf"])
+N_TRIALS = int(CONFIG["tuning"]["n_trials_standard"])
+HYBRID_N_TRIALS = int(CONFIG["tuning"]["n_trials_hybrid"])
+KALMAN_N_TRIALS = int(CONFIG["tuning"]["n_trials_kalman"])
+CTRV_EKF_N_TRIALS = int(CONFIG["tuning"]["n_trials_ctrv_ekf"])
+EARLY_STOPPING_PATIENCE = int(CONFIG["tuning"]["early_stopping_patience"])
+EARLY_STOPPING_MIN_DELTA = float(CONFIG["tuning"]["early_stopping_min_delta"])
+SEED = int(CONFIG["run"]["seed"])
+SAMPLE_PCT = int(CONFIG["run"]["sample_pct"])
+TUNING_VALIDATION_PCT = int(get_sampling_value(CONFIG, "tuning_validation_pct"))
+
+np.random.seed(SEED)
 
 
 def make_objective(model_cls, cached_tracks, max_velocity_steps):
@@ -172,11 +181,17 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
     #3. Save all trials and best parameters to CSV
     #4. Return best parameters for summary table
 
-    cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
+    cached_tracks = load_tracks_cached_numpy(
+        data_dir,
+        split='val',
+        context_filter=CONTEXT_FILTER,
+        sample_pct=TUNING_VALIDATION_PCT,
+        seed=SEED,
+    )
     max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
     max_velocity_steps = max(1, int(max_velocity_steps))
 
-    sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=5, n_ei_candidates=100)
+    sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=5, n_ei_candidates=100)
     study = optuna.create_study(
         study_name=f"{model_key}_val_gridsearch",
         direction="minimize",
@@ -194,6 +209,7 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
     trials_df["model_key"] = model_key
     trials_df["model_label"] = model_label
+    trials_df["sample_pct"] = TUNING_VALIDATION_PCT
 
     csv_path = diagnostics_dir / f"tuning_{model_key}_val.csv"
     trials_df.to_csv(csv_path, index=False)
@@ -208,6 +224,7 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
         "best_velocity_steps": best_steps,
         "best_val_rmse": best_rmse,
         "trials_csv": str(csv_path),
+        "sample_pct": TUNING_VALIDATION_PCT,
     }, trials_df
 
 
@@ -221,14 +238,20 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
     #5. Return best parameters for summary table
 
 
-    cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
+    cached_tracks = load_tracks_cached_numpy(
+        data_dir,
+        split='val',
+        context_filter=CONTEXT_FILTER,
+        sample_pct=TUNING_VALIDATION_PCT,
+        seed=SEED,
+    )
 
     max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
     max_velocity_steps = max(1, int(max_velocity_steps))
 
     seed_cv_steps, seed_ctrv_steps = _load_branch_velocity_steps(diagnostics_dir)
 
-    sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=100, multivariate=False)
+    sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=20, n_ei_candidates=100, multivariate=False)
     study = optuna.create_study(
         study_name="hybrid_cv_ctrv_val_tpe",
         direction="minimize",
@@ -253,6 +276,7 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
     trials_df["model_key"] = "hybrid_cv_ctrv"
     trials_df["model_label"] = "Hybrid CV/CTRV"
+    trials_df["sample_pct"] = TUNING_VALIDATION_PCT
 
     csv_path = diagnostics_dir / "tuning_hybrid_cv_ctrv_val.csv"
     trials_df.to_csv(csv_path, index=False)
@@ -273,13 +297,20 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
         "best_rot_threshold": best_threshold,
         "best_val_rmse": best_rmse,
         "trials_csv": str(csv_path),
+        "sample_pct": TUNING_VALIDATION_PCT,
     }, trials_df
 
 
 def run_kalman_optimization(data_dir, diagnostics_dir):
-    cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
+    cached_tracks = load_tracks_cached_numpy(
+        data_dir,
+        split='val',
+        context_filter=CONTEXT_FILTER,
+        sample_pct=TUNING_VALIDATION_PCT,
+        seed=SEED,
+    )
 
-    sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=100, multivariate=False)
+    sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=20, n_ei_candidates=100, multivariate=False)
     study = optuna.create_study(
         study_name="kalman_val_tpe",
         direction="minimize",
@@ -298,6 +329,7 @@ def run_kalman_optimization(data_dir, diagnostics_dir):
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
     trials_df["model_key"] = "kalman"
     trials_df["model_label"] = "Kalman"
+    trials_df["sample_pct"] = TUNING_VALIDATION_PCT
 
     csv_path = diagnostics_dir / "tuning_kalman_val.csv"
     trials_df.to_csv(csv_path, index=False)
@@ -313,13 +345,20 @@ def run_kalman_optimization(data_dir, diagnostics_dir):
         "best_p0_vel": float(best.params["p0_vel"]),
         "best_val_rmse": float(best.value),
         "trials_csv": str(csv_path),
+        "sample_pct": TUNING_VALIDATION_PCT,
     }, trials_df
 
 
 def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
-    cached_tracks = load_tracks_cached_numpy(data_dir, split='val', context_filter=CONTEXT_FILTER)
+    cached_tracks = load_tracks_cached_numpy(
+        data_dir,
+        split='val',
+        context_filter=CONTEXT_FILTER,
+        sample_pct=TUNING_VALIDATION_PCT,
+        seed=SEED,
+    )
 
-    sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=100, multivariate=False)
+    sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=20, n_ei_candidates=100, multivariate=False)
     study = optuna.create_study(
         study_name="ctrv_ekf_val_tpe",
         direction="minimize",
@@ -338,6 +377,7 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
     trials_df["model_key"] = "ctrv_ekf"
     trials_df["model_label"] = "CTRV EKF"
+    trials_df["sample_pct"] = TUNING_VALIDATION_PCT
 
     csv_path = diagnostics_dir / "tuning_ctrv_ekf_val.csv"
     trials_df.to_csv(csv_path, index=False)
@@ -356,6 +396,7 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
         "best_val_rmse": float(best.value),
         "trials_csv": str(csv_path),
         "best_init_velocity_steps": int(best.params["init_velocity_steps"]),
+        "sample_pct": TUNING_VALIDATION_PCT,
     }, trials_df
 
 def _run_model_job(result_queue, model_key, model_label, model_cls, data_dir, diagnostics_dir):
@@ -406,12 +447,19 @@ if __name__ == "__main__":
     # 5. Write final best-params and all-trials CSVs
     import multiprocessing as mp
 
-    project_root = Path(__file__).resolve().parent.parent
-    data_dir = project_root / "output" / "07_parquet"
-    diagnostics_dir = project_root / "evaluation" / "diagnostics"
-    diagnostics_dir.mkdir(parents=True, exist_ok=True)
+    run_paths = resolve_run_paths(PROJECT_ROOT, CONFIG, create=True)
+    data_dir = PROJECT_ROOT / CONFIG["data"]["parquet_dir"]
+    diagnostics_dir = run_paths["tuning_dir"]
+
+    existing_tuning_csvs = list(diagnostics_dir.glob("tuning_*_val.csv")) + [diagnostics_dir / "tuning_best_params_val.csv", diagnostics_dir / "tuning_all_trials_val.csv"]
+    if any(p.exists() for p in existing_tuning_csvs):
+        print(f"[Warning] Existing tuning outputs found in {diagnostics_dir}. Files will be overwritten for run '{CONFIG['run']['name']}'.")
 
     print(f"Tuning velocity_steps with {N_TRIALS} trial(s) for CV/CTRV/CTRV Arc and 3D hybrid search with {HYBRID_N_TRIALS} trial(s)")
+    print(
+        f"Run: {CONFIG['run']['name']} | seed={SEED} | sample_pct={SAMPLE_PCT}% "
+        f"| tuning_validation_pct={TUNING_VALIDATION_PCT}%"
+    )
     print("Validation tracks are cached once in RAM per model process\n")
 
     standard_jobs = []
@@ -527,5 +575,8 @@ if __name__ == "__main__":
     all_trials_path = diagnostics_dir / "tuning_all_trials_val.csv"
     all_trials_df.to_csv(all_trials_path, index=False)
     print(f"All trials table saved to {all_trials_path}")
+
+    write_run_metadata(run_paths, CONFIG, stage="tuning")
+    update_latest_run_pointer(run_paths)
 
     print("\nNext step: use the saved best parameters for the final test evaluation.")

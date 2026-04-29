@@ -4,6 +4,7 @@ import re
 import csv
 from pathlib import Path
 from .metrics import evaluate_trajectory, plot_ade_over_horizon
+from .runtime_config import subsample_items
 
 # Valid context labels from the preprocessing pipeline
 CONTEXT_LABELS = {'river', 'channel', 'harbour', 'lock', 'unknown'}
@@ -68,10 +69,11 @@ def _iter_track_groups(df, with_track_id=False):
             yield context, pred
 
 
-def load_tracks_cached_numpy(data_dir, split='test', context_filter=None):
+def load_tracks_cached_numpy(data_dir, split='test', context_filter=None, sample_pct=100, seed=42):
     #loads all tracks for the specified split and context into RAM as numpy arrays,
     #massively reduces time spent in I/O
     files = _resolve_files(data_dir, split, context_filter)
+    files = subsample_items(files, sample_pct=sample_pct, seed=seed)
     print(f"Caching numpy tracks from {len(files)} file(s) for split '{split}'" +
           (f", context(s) {context_filter}" if context_filter else ""))
 

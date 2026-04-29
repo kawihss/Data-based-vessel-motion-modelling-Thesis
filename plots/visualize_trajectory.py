@@ -4,6 +4,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, CheckButtons
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from evaluation.runtime_config import load_runtime_config, resolve_run_paths
 
 #this script can be used to manually inspect individual tracks
 #created with help of Claude Sonnet for interactive plotting
@@ -15,6 +20,32 @@ SHOW_CTRV_ARC = True
 SHOW_HYBRID = True
 SHOW_KALMAN = True
 SHOW_CTRV_EKF = True
+
+
+def _select_source_file(project_root, config, model_output_dir, preferred_source_file):
+    preferred_source_file = Path(preferred_source_file)
+    if preferred_source_file.exists():
+        return preferred_source_file
+
+    parquet_dir = project_root / str(config["data"]["parquet_dir"])
+
+    # Prefer a parquet file that has prediction CSVs in the current run output.
+    for pred_path in sorted(Path(model_output_dir).glob("*__*.csv")):
+        source_stem = pred_path.name.split("__", 1)[0]
+        candidate = parquet_dir / f"{source_stem}.parquet"
+        if candidate.exists():
+            print(f"[visualizer] Preferred source file not found, fallback to predicted file: {candidate}")
+            return candidate
+
+    # Final fallback: first parquet file in configured parquet directory.
+    parquet_files = sorted(parquet_dir.glob("*.parquet"))
+    if parquet_files:
+        print(f"[visualizer] Preferred source file not found, fallback to first parquet: {parquet_files[0]}")
+        return parquet_files[0]
+
+    raise FileNotFoundError(
+        f"No parquet files found in {parquet_dir} and no matching predictions in {model_output_dir}."
+    )
 
 def load_data(source):
     if isinstance(source, pd.DataFrame):
@@ -209,12 +240,22 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
 
 if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
+    config = load_runtime_config(project_root)
+    run_paths = resolve_run_paths(project_root, config, create=False)
+    model_output_dir = run_paths['model_output_dir']
 
     # Point to a parquet file in output/07_parquet/ (stem must match the prediction output filenames)
     source_file = project_root / 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-01_01.parquet'
     #source_file = project_root / 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-07_01.parquet'
     #source_file = project_root / 'output/07_parquet/test_river_processed_bremerhaven_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Bremerhaven-2025-02_16.parquet'
 
+    source_file = _select_source_file(
+        project_root=project_root,
+        config=config,
+        model_output_dir=model_output_dir,
+        preferred_source_file=source_file,
+    )
+
     df = load_data(source_file)
-    model_predictions, model_specs = load_model_predictions(source_file, model_output_dir=project_root / 'output/08_baseline_results/model_output')
+    model_predictions, model_specs = load_model_predictions(source_file, model_output_dir=model_output_dir)
     create_interactive_plot(df, model_predictions=model_predictions, model_specs=model_specs)

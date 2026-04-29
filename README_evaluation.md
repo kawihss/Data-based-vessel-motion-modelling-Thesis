@@ -165,3 +165,48 @@ Model visibility for plots is controlled by the top-level flags in the script (`
 3. run `evaluation/run_evaluation.py` on test,
 4. run `evaluation/plot_evaluation.py` to generate evaluation and tuning plots,
 5. compare final model metrics and generated figures.
+
+## Central Config (YAML)
+
+Runtime settings are now configured in `configs/evaluation.yaml`.
+
+This single file controls:
+
+- run metadata (`run.name`, `run.description`, `run.seed`, `run.sample_pct`),
+- sampling (`sampling.tuning_validation_pct`, `sampling.evaluation_pct`),
+- data settings (`data.parquet_dir`, `data.split`, `data.context_filter`),
+- model enable switches (`models.*`),
+- tuning hyperparameters (`tuning.*`),
+- plotting model visibility and step duration (`plotting.*`).
+
+`sampling.tuning_validation_pct` controls file-level subsampling of the validation split during hyperparameter optimization.
+
+`sampling.evaluation_pct` controls file-level subsampling of the configured evaluation split (usually test), useful for faster debug/test evaluation runs.
+
+All sampling is deterministic and reproducible via `run.seed`.
+
+## Non-overwriting Output Layout
+
+Outputs are now versioned per run name to avoid data loss:
+
+- base: `output/08_baseline_results/runs/{run.name}/`
+- tuning CSVs: `.../tuning/`
+- evaluation diagnostics: `.../diagnostics/`
+- prediction exports: `.../model_output/`
+- plots: `.../plots/`
+
+If you reuse the same `run.name`, tuning and evaluation overwrite files in that run folder.
+Use a new `run.name` when you want to preserve earlier results.
+
+## Plotting Source
+
+`evaluation/plot_evaluation.py` now reads from the newest run folder under `output/08_baseline_results/runs/` by modification time and writes plots back to that run's `plots/` folder.
+
+## Reproducibility Metadata
+
+Each run writes:
+
+- `run_metadata.yaml` in the run root (contains run name, seed, sample percentage, split/context),
+- `output/08_baseline_results/latest_run.txt` updated to the current run name.
+
+Evaluation CSVs also carry `sample_pct` so future subsampling runs can be compared without changing schema.

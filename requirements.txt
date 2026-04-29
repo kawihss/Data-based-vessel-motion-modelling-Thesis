@@ -5,6 +5,7 @@ scipy
 requests
 joblib
 tqdm
+pyyaml
 
 #coordinates
 pyproj

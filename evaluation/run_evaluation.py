@@ -8,17 +8,26 @@ from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityMode
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
 from evaluation.evaluator import export_predictions_for_file, _resolve_files, _read_track_file, _iter_track_groups, reconstruct_positions, _extract_month_label
 from evaluation.metrics import evaluate_trajectory
+from evaluation.runtime_config import load_runtime_config, resolve_run_paths, update_latest_run_pointer, write_run_metadata, get_sampling_value, subsample_items
 
-#runner for evaluation *testing, not tuning
-RUN_CONSTANT_VELOCITY = True
-RUN_CTRV = True
-RUN_CTRV_ARC = True
-RUN_HYBRID = True
-RUN_KALMAN = True
-RUN_CTRV_EKF = True
-EVAL_SPLIT = 'test'
-CONTEXT_FILTER = None  # e.g. 'lock' or ['harbour', 'lock']
-EXPORT_PREDICTIONS = True
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CONFIG = load_runtime_config(PROJECT_ROOT)
+
+# runner for evaluation *testing, not tuning
+RUN_CONSTANT_VELOCITY = bool(CONFIG["models"]["cv"])
+RUN_CTRV = bool(CONFIG["models"]["ctrv"])
+RUN_CTRV_ARC = bool(CONFIG["models"]["ctrv_arc"])
+RUN_HYBRID = bool(CONFIG["models"]["hybrid"])
+RUN_KALMAN = bool(CONFIG["models"]["kalman"])
+RUN_CTRV_EKF = bool(CONFIG["models"]["ctrv_ekf"])
+EVAL_SPLIT = str(CONFIG["data"]["split"])
+CONTEXT_FILTER = CONFIG["data"]["context_filter"]
+EXPORT_PREDICTIONS = bool(CONFIG["evaluation"]["export_predictions"])
+SEED = int(CONFIG["run"]["seed"])
+SAMPLE_PCT = int(CONFIG["run"]["sample_pct"])
+EVALUATION_PCT = int(get_sampling_value(CONFIG, "evaluation_pct"))
+
+np.random.seed(SEED)
 
 
 def _load_tuned_values(diagnostics_dir):
@@ -30,13 +39,19 @@ def _load_tuned_values(diagnostics_dir):
     }
 
 if __name__ == "__main__":
-    project_root = Path(__file__).resolve().parent.parent
-    baseline_output_dir = project_root / "output" / "08_baseline_results"
-    tuning_diagnostics_dir = project_root / "evaluation" / "diagnostics"  # where tuning summary is saved
-    test_diagnostics_dir = baseline_output_dir / "diagnostics"  # where test results are saved
-    model_output_dir = baseline_output_dir / "model_output"
-    test_diagnostics_dir.mkdir(parents=True, exist_ok=True)
-    model_output_dir.mkdir(parents=True, exist_ok=True)
+    run_paths = resolve_run_paths(PROJECT_ROOT, CONFIG, create=True)
+    tuning_diagnostics_dir = run_paths["tuning_dir"]
+    test_diagnostics_dir = run_paths["diagnostics_dir"]
+    model_output_dir = run_paths["model_output_dir"]
+
+    comparison_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_model_comparison.csv"
+    if comparison_path.exists():
+        print(f"[Warning] Existing evaluation outputs found in {test_diagnostics_dir}. Files will be overwritten for run '{CONFIG['run']['name']}'.")
+
+    print(
+        f"Run: {CONFIG['run']['name']} | split={EVAL_SPLIT} | seed={SEED} "
+        f"| sample_pct={SAMPLE_PCT}% | evaluation_pct={EVALUATION_PCT}%"
+    )
 
     tuned_values = _load_tuned_values(tuning_diagnostics_dir)
     cv_row = tuned_values.get("cv") or tuned_values.get("constant_velocity")
@@ -125,8 +140,9 @@ if __name__ == "__main__":
         raise SystemExit(0)
 
     comparison_rows = []
-    data_dir = project_root / "output/07_parquet"
+    data_dir = PROJECT_ROOT / CONFIG["data"]["parquet_dir"]
     files = _resolve_files(data_dir, EVAL_SPLIT, CONTEXT_FILTER)
+    files = subsample_items(files, sample_pct=EVALUATION_PCT, seed=SEED)
     total_models = len(models)
     total_files = len(files)
 
@@ -176,6 +192,7 @@ if __name__ == "__main__":
                     'FDE': file_metrics['FDE'],
                     'RMSE': file_metrics['RMSE'],
                     'n_tracks': len(file_true),
+                    'sample_pct': EVALUATION_PCT,
                 })
                 all_true.extend(file_true)
                 all_pred.extend(file_pred)
@@ -211,6 +228,7 @@ if __name__ == "__main__":
             'FDE': metrics.get('FDE'),
             'RMSE': metrics.get('RMSE'),
             'n_tracks': metrics.get('n_tracks'),
+            'sample_pct': EVALUATION_PCT,
         })
 
         per_file_metrics = pd.DataFrame(per_file_rows)
@@ -233,6 +251,7 @@ if __name__ == "__main__":
                     .sort_values('RMSE', ascending=False)
                     .reset_index(drop=True)
                 )
+                per_month_metrics['sample_pct'] = EVALUATION_PCT
                 per_month_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_month_{model_key}.csv"
                 per_month_metrics.to_csv(per_month_path, index=False)
 
@@ -242,7 +261,9 @@ if __name__ == "__main__":
             pd.DataFrame({'ade': ade_per_step}).to_csv(ade_path, index=False)
 
     comparison_df = pd.DataFrame(comparison_rows)
-    comparison_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_model_comparison.csv"
     comparison_df.to_csv(comparison_path, index=False)
+
+    write_run_metadata(run_paths, CONFIG, stage="evaluation")
+    update_latest_run_pointer(run_paths)
 
     print(comparison_df.to_string(index=False))
