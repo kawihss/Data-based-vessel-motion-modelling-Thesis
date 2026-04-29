@@ -4,7 +4,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 import numpy as np
-from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, HybridCVCTRVModel
+from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, ConstantTurnRateVelocityArcModel, HybridCVCTRVModel
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
 from evaluation.evaluator import export_predictions_for_file, _resolve_files, _read_track_file, _iter_track_groups, reconstruct_positions, _extract_month_label
 from evaluation.metrics import evaluate_trajectory
@@ -12,6 +12,7 @@ from evaluation.metrics import evaluate_trajectory
 #runner for evaluation *testing, not tuning
 RUN_CONSTANT_VELOCITY = True
 RUN_CTRV = True
+RUN_CTRV_ARC = True
 RUN_HYBRID = True
 RUN_KALMAN = True
 RUN_CTRV_EKF = True
@@ -40,6 +41,7 @@ if __name__ == "__main__":
     tuned_values = _load_tuned_values(tuning_diagnostics_dir)
     cv_row = tuned_values.get("cv") or tuned_values.get("constant_velocity")
     ctrv_row = tuned_values.get("ctrv")
+    ctrv_arc_row = tuned_values.get("ctrv_arc")
     hybrid_row = tuned_values.get("hybrid_cv_ctrv")
     kalman_row = tuned_values.get("kalman")
     ctrv_ekf_row = tuned_values.get("ctrv_ekf")
@@ -51,6 +53,10 @@ if __name__ == "__main__":
     ctrv_kwargs = {}
     if ctrv_row is not None and pd.notna(ctrv_row.get("best_velocity_steps")):
         ctrv_kwargs = {"velocity_steps": int(ctrv_row.get("best_velocity_steps"))}
+
+    ctrv_arc_kwargs = {}
+    if ctrv_arc_row is not None and pd.notna(ctrv_arc_row.get("best_velocity_steps")):
+        ctrv_arc_kwargs = {"velocity_steps": int(ctrv_arc_row.get("best_velocity_steps"))}
 
     hybrid_kwargs = {}
     if hybrid_row is not None:
@@ -98,6 +104,10 @@ if __name__ == "__main__":
         if not ctrv_kwargs:
             raise ValueError("CTRV is enabled but no tuned CTRV parameters were found in tuning_best_params_val.csv")
         models.append(("ctrv", "CTRV", ConstantTurnRateVelocityModel(**ctrv_kwargs)))
+    if RUN_CTRV_ARC:
+        if not ctrv_arc_kwargs:
+            raise ValueError("CTRV Arc is enabled but no tuned CTRV Arc parameters were found in tuning_best_params_val.csv")
+        models.append(("ctrv_arc", "CTRV Arc", ConstantTurnRateVelocityArcModel(**ctrv_arc_kwargs)))
     if RUN_HYBRID:
         if not hybrid_kwargs:
             raise ValueError("Hybrid is enabled but no tuned Hybrid parameters were found in tuning_best_params_val.csv")
@@ -117,15 +127,26 @@ if __name__ == "__main__":
     comparison_rows = []
     data_dir = project_root / "output/07_parquet"
     files = _resolve_files(data_dir, EVAL_SPLIT, CONTEXT_FILTER)
+    total_models = len(models)
+    total_files = len(files)
+
+    print(
+        f"Evaluating {total_models} model(s) on {total_files} file(s) "
+        f"for split '{EVAL_SPLIT}'"
+        + (f", context(s) {CONTEXT_FILTER}" if CONTEXT_FILTER else "")
+    )
 
     # Load all parquet files into memory ONCE
     file_data = [(f, _read_track_file(f)) for f in files]
 
     # Evaluate all models using the cached dataframes
-    for model_key, model_label, model in models:
+    for model_index, (model_key, model_label, model) in enumerate(models, start=1):
         per_file_rows = []
         all_true = []
         all_pred = []
+        completed_files = 0
+
+        print(f"[Progress] model {model_index}/{total_models} started ({model_label})")
 
         for file_path, df in file_data:
             file_true = []
@@ -164,6 +185,13 @@ if __name__ == "__main__":
                     model, file_path, model_output_dir,
                     split=EVAL_SPLIT, model_key=model_key, model_label=model_label,
                 )
+
+            completed_files += 1
+            print(
+                f"[Progress] model {model_index}/{total_models}, "
+                f"file {completed_files}/{total_files} completed "
+                f"({model_label}, {Path(file_path).name})"
+            )
 
         if all_true:
             metrics = evaluate_trajectory(np.array(all_true), np.array(all_pred))

@@ -11,6 +11,7 @@ from pathlib import Path
 # Globals also togglable in the GUI
 SHOW_CV = True
 SHOW_CTRV = True
+SHOW_CTRV_ARC = True
 SHOW_HYBRID = True
 SHOW_KALMAN = True
 SHOW_CTRV_EKF = True
@@ -32,6 +33,7 @@ def load_model_predictions(source_file, model_output_dir='output/08_baseline_res
     model_specs = {
         'constant_velocity': {'label': 'CV',     'color': '#ff7f0e', 'marker': 'x', 'alpha': 0.9},
         'ctrv':              {'label': 'CTRV',   'color': '#d62728', 'marker': '^', 'alpha': 0.9},
+        'ctrv_arc':          {'label': 'CTRV Arc', 'color': '#e377c2', 'marker': 'v', 'alpha': 0.85},
         'hybrid_cv_ctrv':    {'label': 'Hybrid', 'color': '#9467bd', 'marker': 's', 'alpha': 0.45},#overlaps, transparent
         'kalman':            {'label': 'Kalman', 'color': '#17becf', 'marker': 'D', 'alpha': 0.45}, #overlaps, transparent
         'ctrv_ekf':          {'label': 'CTRV EKF', 'color': '#8c564b', 'marker': 'P', 'alpha': 0.55},
@@ -70,6 +72,7 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
     visibility = {
         'constant_velocity': SHOW_CV,
         'ctrv':              SHOW_CTRV,
+        'ctrv_arc':          SHOW_CTRV_ARC,
         'hybrid_cv_ctrv':    SHOW_HYBRID,
         'kalman':            SHOW_KALMAN,
         'ctrv_ekf':          SHOW_CTRV_EKF,
@@ -170,8 +173,8 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
         fig.canvas.draw_idle()
 
     # Model toggle buttons
-    toggle_keys   = ['constant_velocity', 'ctrv', 'hybrid_cv_ctrv', 'kalman', 'ctrv_ekf']
-    toggle_labels = ['CV', 'CTRV', 'Hybrid', 'Kalman', 'CTRV EKF']
+    toggle_keys   = ['constant_velocity', 'ctrv', 'ctrv_arc', 'hybrid_cv_ctrv', 'kalman', 'ctrv_ekf']
+    toggle_labels = ['CV', 'CTRV', 'CTRV Arc', 'Hybrid', 'Kalman', 'CTRV EKF']
     toggle_active = [visibility[k] for k in toggle_keys]
 
     ax_check = plt.axes([0.15, 0.01, 0.50, 0.08])

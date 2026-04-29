@@ -9,13 +9,14 @@ import time
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, HybridCVCTRVModel
+from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, ConstantTurnRateVelocityArcModel, HybridCVCTRVModel
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
 from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy
 
 CONTEXT_FILTER = None   # None = all contexts; or e.g. 'lock', or ['harbour', 'lock'] 
 RUN_CV = True
 RUN_CTRV = True
+RUN_CTRV_ARC = True
 RUN_HYBRID = True
 RUN_KALMAN = True
 RUN_CTRV_EKF = True
@@ -410,7 +411,7 @@ if __name__ == "__main__":
     diagnostics_dir = project_root / "evaluation" / "diagnostics"
     diagnostics_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Tuning velocity_steps with {N_TRIALS} trial(s) for CV/CTRV and 3D hybrid search with {HYBRID_N_TRIALS} trial(s)")
+    print(f"Tuning velocity_steps with {N_TRIALS} trial(s) for CV/CTRV/CTRV Arc and 3D hybrid search with {HYBRID_N_TRIALS} trial(s)")
     print("Validation tracks are cached once in RAM per model process\n")
 
     standard_jobs = []
@@ -418,13 +419,23 @@ if __name__ == "__main__":
         standard_jobs.append(("cv", "Constant Velocity", ConstantVelocityModel))
     if RUN_CTRV:
         standard_jobs.append(("ctrv", "CTRV", ConstantTurnRateVelocityModel))
+    if RUN_CTRV_ARC:
+        standard_jobs.append(("ctrv_arc", "CTRV Arc", ConstantTurnRateVelocityArcModel))
 
     if not standard_jobs and not RUN_HYBRID and not RUN_KALMAN and not RUN_CTRV_EKF:
-        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_HYBRID and/or RUN_KALMAN and/or RUN_CTRV_EKF to True.")
+        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_CTRV_ARC and/or RUN_HYBRID and/or RUN_KALMAN and/or RUN_CTRV_EKF to True.")
         raise SystemExit(0)
 
     best_rows = []
     all_trials = []
+
+    total_steps = (
+        len(standard_jobs)
+        + (1 if RUN_KALMAN else 0)
+        + (1 if RUN_CTRV_EKF else 0)
+        + (1 if RUN_HYBRID else 0)
+    )
+    completed_steps = 0
 
     result_queue = mp.Queue()
     processes = []
@@ -477,6 +488,8 @@ if __name__ == "__main__":
         best_row, trials_df = result_queue.get()
         best_rows.append(best_row)
         all_trials.append(trials_df)
+        completed_steps += 1
+        print(f"[Progress] {completed_steps}/{total_steps} steps completed ({best_row.get('model_label', best_row.get('model_key', 'unknown'))})")
 
     for p in processes:
         p.join()
@@ -502,6 +515,8 @@ if __name__ == "__main__":
         best_rows = [row for row in best_rows if row.get("model_key") != best_row["model_key"]]
         best_rows.append(best_row)
         all_trials.append(trials_df)
+        completed_steps += 1
+        print(f"[Progress] {completed_steps}/{total_steps} steps completed ({best_row.get('model_label', best_row.get('model_key', 'unknown'))})")
 
     best_df = pd.DataFrame(best_rows)
     best_path = diagnostics_dir / "tuning_best_params_val.csv"

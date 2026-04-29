@@ -17,7 +17,8 @@ EVAL_SPLIT = "test"
 STEP_DURATION_S = 30  # seconds per prediction step
 
 PLOT_CONSTANT_VELOCITY = True
-PLOT_CTRV = True
+PLOT_CTRV = False
+PLOT_CTRV_ARC = False
 PLOT_HYBRID = True
 PLOT_KALMAN = True
 PLOT_CTRV_EKF = True
@@ -25,6 +26,7 @@ PLOT_CTRV_EKF = True
 _ALL_MODEL_LABELS = {
     "constant_velocity": "Constant Velocity",
     "ctrv": "CTRV",
+    "ctrv_arc": "CTRV Arc",
     "hybrid_cv_ctrv": "Hybrid CV/CTRV",
     "kalman": "Kalman",
     "ctrv_ekf": "CTRV EKF",
@@ -32,6 +34,7 @@ _ALL_MODEL_LABELS = {
 _MODEL_FLAGS = {
     "constant_velocity": PLOT_CONSTANT_VELOCITY,
     "ctrv": PLOT_CTRV,
+    "ctrv_arc": PLOT_CTRV_ARC,
     "hybrid_cv_ctrv": PLOT_HYBRID,
     "kalman": PLOT_KALMAN,
     "ctrv_ekf": PLOT_CTRV_EKF,
