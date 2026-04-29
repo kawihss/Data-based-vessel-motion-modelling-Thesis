@@ -1,58 +1,13 @@
 from pathlib import Path
-import re
 import random
 
 import yaml
 
 
-SAFE_RUN_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-
-
 def load_runtime_config(project_root):
     config_path = Path(project_root) / "configs" / "evaluation.yaml"
-    if not config_path.exists():
-        raise FileNotFoundError(f"Missing config file: {config_path}")
-
     with config_path.open("r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-
-    if cfg is None:
-        raise ValueError(f"Config error: Empty YAML file: {config_path}")
-
-    _validate_config(cfg)
-    return cfg
-
-
-def _validate_config(cfg):
-    run_cfg = cfg["run"]
-    run_name = str(run_cfg["name"]).strip()
-    if not run_name:
-        raise ValueError("Config error: run.name must be a non-empty string.")
-    if not SAFE_RUN_NAME_RE.match(run_name):
-        raise ValueError("Config error: run.name may only contain letters, numbers, dot, underscore, and dash.")
-
-    seed = run_cfg["seed"]
-    if not isinstance(seed, int):
-        raise ValueError("Config error: run.seed must be an integer.")
-
-    sample_pct = run_cfg["sample_pct"]
-    _validate_pct(sample_pct, field_name="run.sample_pct")
-
-    sampling_cfg = cfg["sampling"]
-    _validate_pct(sampling_cfg["tuning_validation_pct"], field_name="sampling.tuning_validation_pct")
-    _validate_pct(sampling_cfg["evaluation_pct"], field_name="sampling.evaluation_pct")
-
-    models_cfg = cfg["models"]
-    if not any(bool(v) for v in models_cfg.values()):
-        raise ValueError("Config error: At least one model must be enabled under models.*")
-
-
-def _validate_pct(value, field_name):
-    if not isinstance(value, int):
-        raise ValueError(f"Config error: {field_name} must be an integer between 1 and 100.")
-
-    if value < 1 or value > 100:
-        raise ValueError(f"Config error: {field_name} must be an integer between 1 and 100.")
+        return yaml.safe_load(f)
 
 
 def resolve_run_paths(project_root, cfg, create=False):
