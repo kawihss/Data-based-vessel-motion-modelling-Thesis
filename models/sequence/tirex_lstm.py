@@ -41,11 +41,7 @@ class TirexLSTMModel(BaselineModel):
         self.scaler_path = scaler_path
 
     def _get_model(self):
-        if load_model is None:
-            raise ImportError(
-                "tirex is not installed. Install with `pip install tirex-ts` and retry."
-            )
-
+   
         cache_key = (self.model_name, self.device, self.backend, self.compile_model)
         model = self._MODEL_CACHE.get(cache_key)
         if model is None:
@@ -70,24 +66,11 @@ class TirexLSTMModel(BaselineModel):
         if cached is not None:
             return cached
 
-        if not scaler_path.exists():
-            raise RuntimeError(
-                f"TiRex scaler not found at '{scaler_path}'. Run 05_normalize.py first."
-            )
-
         scalers = joblib.load(scaler_path)
         global_scaler = scalers.get("global_scaler", {})
         means = np.asarray(global_scaler.get("mean", []), dtype=float)
         scales = np.asarray(global_scaler.get("scale", []), dtype=float)
-        if means.size < 2 or scales.size < 2:
-            raise RuntimeError(
-                f"TiRex scaler at '{scaler_path}' has fewer than 2 features; expected [dx, dy, ...]."
-            )
-
-        if not (np.isfinite(scales[0]) and scales[0] > 1e-12):
-            raise RuntimeError(f"TiRex scaler dx_scale={scales[0]} is invalid.")
-        if not (np.isfinite(scales[1]) and scales[1] > 1e-12):
-            raise RuntimeError(f"TiRex scaler dy_scale={scales[1]} is invalid.")
+     
 
         params = {
             "dx_mean": float(means[0]),
@@ -98,22 +81,6 @@ class TirexLSTMModel(BaselineModel):
         self._SCALER_CACHE[cache_key] = params
         return params
 
-    @staticmethod
-    def _normalize_mean_output(mean):
-        arr = np.asarray(mean, dtype=float)
-        if arr.ndim == 1:
-            return arr
-        if arr.ndim == 2:
-            return arr
-        if arr.ndim >= 3:
-            # Common shapes: (batch, horizon, 1) or (batch, 1, horizon)
-            if arr.shape[-1] == 1:
-                return arr[..., 0]
-            if arr.shape[1] == 1:
-                return arr[:, 0, :]
-            return arr[:, :, 0]
-        return arr
-
     def _forecast_univariate_channels(self, x_ctx, y_ctx, n_pred_steps):
         model = self._get_model()
         context = np.stack([x_ctx, y_ctx], axis=0).astype(np.float32)
@@ -123,15 +90,8 @@ class TirexLSTMModel(BaselineModel):
             prediction_length=int(n_pred_steps),
         )
 
-        mean_2d = self._normalize_mean_output(mean)
-        if mean_2d.ndim == 1:
-            raise ValueError(
-                f"TiRex returned a 1-D forecast (shape {mean_2d.shape}); expected 2 channels (dx, dy)."
-            )
-
-        if mean_2d.shape[0] < 2:
-            raise ValueError("TiRex forecast did not return two channel outputs.")
-
+        mean_2d = np.asarray(np.squeeze(mean)[0], dtype=float)
+      
         x_pred = np.asarray(mean_2d[0], dtype=float).reshape(-1)
         y_pred = np.asarray(mean_2d[1], dtype=float).reshape(-1)
         return x_pred[:n_pred_steps], y_pred[:n_pred_steps]
@@ -171,10 +131,6 @@ class TirexLSTMModel(BaselineModel):
 
     def predict(self, context_df, n_pred_steps):
         ctx = context_df.sort_values("t_utc") if "t_utc" in context_df.columns else context_df
-        if "dx_norm" not in ctx.columns or "dy_norm" not in ctx.columns:
-            raise ValueError(
-                "TiRexLSTM requires 'dx_norm' and 'dy_norm' columns. Run 05_normalize.py first."
-            )
         return self._predict_from_series(
             ctx["dx_norm"].values,
             ctx["dy_norm"].values,
@@ -182,6 +138,6 @@ class TirexLSTMModel(BaselineModel):
         )
 
     def predict_from_arrays(self, x, y, rot, n_pred_steps):
-        raise NotImplementedError(
+        raise NotImplementedError( # would be interesting to compare based on x, y, but not implemented now because we want to avoid overfitting
             "TiRexLSTM requires normalized dx/dy inputs. Use predict_from_cached_track or predict instead."
         )
