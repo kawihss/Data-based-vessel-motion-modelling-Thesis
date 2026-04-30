@@ -12,6 +12,7 @@ from evaluation.runtime_config import load_runtime_config, resolve_run_paths
 
 #this script can be used to manually inspect individual tracks
 #created with help of Claude Sonnet for interactive plotting
+#plots not availably on VERA via ssh, run locally
 
 # Globals also togglable in the GUI
 SHOW_CV = True

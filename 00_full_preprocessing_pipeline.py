@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 
-START_AT_STEP = 4   # Choose 1-6
+START_AT_STEP = 2   # Choose 1-6
 CLEAR_OUTPUTS = True # Clears folders for active steps
 
 STEPS = [

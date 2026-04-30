@@ -6,6 +6,7 @@ requests
 joblib
 tqdm
 pyyaml
+fastparquet
 
 #coordinates
 pyproj
@@ -29,3 +30,5 @@ filterpy
 transformers
 accelerate
 tirex-ts
+
+#Also requires NVIDIA CUDA 8.0 or later (see 

@@ -16,19 +16,18 @@ Current runtime data paths:
 - final baseline evaluation input: `output/07_parquet/`
 - baseline outputs: `output/08_baseline_results/`
 
-## Side Note: RAM Usage
+## System requirements
 
-Evaluation and tuning currently favor speed over minimal memory usage:
+- Python dependencies: see `requirements.txt`
+- NVIDIA CUDA 8.0 or later for the tirex library
+- RAM: 32+ GB recommended (tested on 48GB+ machines) for caching track data during tuning and evaluation
 
-- parquet or cached track data is kept in RAM to reduce repeated disk I/O,
-- tuning caches are process-local, so parallel CV and CTRV jobs increase total RAM usage,
-- this is intentional and acceptable for the target machines (IRT workstation and personal computer), both with ample RAM.
 
 ## Model Layer
 
 ### `models/base_model.py`
 
-`BaselineModel` is the common interface. Evaluator logic is model-agnostic and only depends on `predict(context_df, n_pred_steps)`.
+`BaselineModel` is the common interface. Evaluator logic is model-agnostic and only depends on `predict(context_df, n_pred_steps)`. Sequence models are
 
 ### `models/kinematic.py`
 
@@ -210,3 +209,18 @@ Each run writes:
 - `output/08_baseline_results/latest_run.txt` updated to the current run name.
 
 Evaluation CSVs also carry `sample_pct` so future subsampling runs can be compared without changing schema.
+
+
+
+## Notes
+
+**GPU usage monitoring:**
+```bash
+nvidia-smi -L
+watch -n 1 nvidia-smi
+```
+
+**CPU usage monitoring (Python processes):**
+```bash
+htop -p $(pgrep -d',' -f python)
+```
