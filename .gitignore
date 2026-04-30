@@ -13,3 +13,6 @@ venv/
 
 __pycache__/
 *.pyc
+
+Data # simlink
+output # simlink
