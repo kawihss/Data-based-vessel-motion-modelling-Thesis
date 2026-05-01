@@ -233,3 +233,17 @@ watch -n 1 nvidia-smi
 ```bash
 htop -p $(pgrep -d',' -f python)
 ```
+
+**Run without crash on logout:**
+
+add tag -u for unbuffered stoudt if you want to see live output in the log file:
+```bash
+nohup python -u evaluation/tune_hyperparams.py > tune_log.txt 2>&1 &
+```
+```bash
+nohup python -u evaluation/run_evaluation.py > tune_log.txt 2>&1 &
+```
+
+
+
+read `tune_log.txt` for output and errors. Use `tail -f tune_log.txt` to monitor live.

@@ -480,7 +480,6 @@ if __name__ == "__main__":
     if any(p.exists() for p in existing_tuning_csvs):
         print(f"[Warning] Existing tuning outputs found in {diagnostics_dir}. Files will be overwritten for run '{CONFIG['run']['name']}'.")
 
-    print("Running full grid search over velocity_steps for CV/CTRV/CTRV Arc/TiRex LSTM")
     print(f"Hybrid search trials: {HYBRID_N_TRIALS} | Kalman: {KALMAN_N_TRIALS} | CTRV EKF: {CTRV_EKF_N_TRIALS}")
     print(
         f"Run: {CONFIG['run']['name']} | seed={SEED} | sample_pct={SAMPLE_PCT}% "

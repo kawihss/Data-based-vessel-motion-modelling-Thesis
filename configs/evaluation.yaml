@@ -1,5 +1,5 @@
 run:
-  name: baseline_river_river
+  name: baseline_river_river_100
   description: Running all baselines models on river context tracks, with river context filter for tuning and evaluation.
   seed: 42
   sample_pct: 100 #of 100
@@ -38,9 +38,9 @@ models:
 tuning:
   n_trials_standard: 30
   n_trials_tirex: 1 # just testing if it runs
-  n_trials_hybrid: 200
-  n_trials_kalman: 200
-  n_trials_ctrv_ekf: 200
+  n_trials_hybrid: 100
+  n_trials_kalman: 100
+  n_trials_ctrv_ekf: 100
   early_stopping_patience: 50
   early_stopping_min_delta: 0.0001
 

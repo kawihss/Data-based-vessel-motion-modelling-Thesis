@@ -1,5 +1,3 @@
-
-
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -8,6 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
+import seaborn as sns
 
 from evaluation.evaluator import plot_horizon_error
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths
@@ -78,7 +77,7 @@ def plot_ade_horizon():
             continue
         ade_values = pd.read_csv(ade_path)["ade"].values
         plot_horizon_error({"ADE_per_step": ade_values}, label=label, ax=ax,
-                           step_duration_s=STEP_DURATION_S)
+                   step_duration_s=STEP_DURATION_S)
         any_plotted = True
 
     if not any_plotted:
@@ -131,6 +130,7 @@ def plot_monthly_metrics():
                 linewidth=1.8,
                 markersize=5,
                 label=label,
+                alpha=0.7,
             )
             any_plotted = True
 
@@ -165,6 +165,7 @@ def plot_results(df, best_steps, best_rmse, model_label, output_path):
         markersize=5,
         color="steelblue",
         label="Val RMSE",
+        alpha=0.7,
     )
     ax.axvline(best_steps, color="crimson", linestyle="--", linewidth=1.5,
                label=f"Best velocity_steps={best_steps}  (RMSE={best_rmse:.4f} m)")
@@ -229,7 +230,7 @@ def plot_hybrid_results(
     cbar.set_label("Validation RMSE  [m]")
 
     # Panel 2: RMSE vs rot_steps for all trials (scatter), best point starred.
-    ax_mid.scatter(df["params_rot_steps"], df["value"], s=25, alpha=0.5, color="steelblue", label="All trials")
+    ax_mid.scatter(df["params_rot_steps"], df["value"], s=25, alpha=0.7, color="steelblue", label="All trials")
     ax_mid.scatter(
         [best_rot_steps], [best_rmse], color="crimson", marker="*", s=220, zorder=5,
         label=f"Best rot_steps={best_rot_steps}\nRMSE={best_rmse:.4f} m",
@@ -241,7 +242,7 @@ def plot_hybrid_results(
     ax_mid.legend(fontsize=9)
 
     # Panel 3: RMSE vs rot_threshold for all trials (scatter), best point starred.
-    ax_right.scatter(df["params_rot_threshold"], df["value"], s=25, alpha=0.5, color="steelblue", label="All trials")
+    ax_right.scatter(df["params_rot_threshold"], df["value"], s=25, alpha=0.7, color="steelblue", label="All trials")
     ax_right.scatter(
         [best_threshold], [best_rmse], color="crimson", marker="*", s=220, zorder=5,
         label=f"Best rot_threshold={best_threshold:.4f}\nRMSE={best_rmse:.4f} m",
@@ -274,7 +275,7 @@ def plot_kalman_results(df, best_params, best_rmse, model_label, output_path):
         axes = [axes]
 
     for ax, (col, xlabel) in zip(axes, available.items()):
-        ax.scatter(df[col], df["value"], s=20, alpha=0.45, color="steelblue", label="All trials")
+        ax.scatter(df[col], df["value"], s=20, alpha=0.7, color="steelblue", label="All trials")
         best_val = best_params.get(col.replace("params_", "best_"))
         if best_val is not None:
             ax.scatter([best_val], [best_rmse], color="crimson", marker="*", s=220, zorder=5,
@@ -309,7 +310,7 @@ def plot_ctrv_ekf_results(df, best_params, best_rmse, model_label, output_path):
         axes = [axes]
 
     for ax, (col, xlabel) in zip(axes, available.items()):
-        ax.scatter(df[col], df["value"], s=20, alpha=0.45, color="steelblue", label="All trials")
+        ax.scatter(df[col], df["value"], s=20, alpha=0.7, color="steelblue", label="All trials")
         best_val = best_params.get(col.replace("params_", "best_"))
         if best_val is not None:
             ax.scatter([best_val], [best_rmse], color="crimson", marker="*", s=220, zorder=5,
@@ -341,7 +342,7 @@ def plot_convergence(df, model_label, output_path):
     best_rmse = float(df.loc[best_idx, "value"])
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    ax.scatter(df["number"], df["value"], s=18, color="steelblue", alpha=0.6, zorder=3, label="Trial RMSE")
+    ax.scatter(df["number"], df["value"], s=18, color="steelblue", alpha=0.7, zorder=3, label="Trial RMSE")
     ax.step(df["number"], df["best_so_far"], where="post", color="crimson", linewidth=2, label="Best so far")
     ax.axvline(best_trial, color="green", linestyle="--", linewidth=1.2,
                label=f"Best trial ({best_trial}, RMSE={best_rmse:.4f} m)")
@@ -473,6 +474,84 @@ def plot_tuning_results():
 
 
 
+def _load_per_file_rmse(model_keys_labels):
+    all_data = []
+    for key, label in model_keys_labels:
+        per_file_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_file_{key}.csv"
+        if not per_file_path.exists():
+            print(f"[violin] No per-file metrics for '{label}', skipping.")
+            continue
+        df = pd.read_csv(per_file_path)
+        if "month" not in df.columns or "RMSE" not in df.columns:
+            print(f"[violin] '{label}' CSV missing 'month' or 'RMSE' column, skipping.")
+            continue
+        df = df.dropna(subset=["month", "RMSE"])[["month", "RMSE"]].copy()
+        df["year"] = df["month"].apply(lambda x: str(x).split("-")[0])
+        df["model"] = label
+        all_data.append(df)
+    return pd.concat(all_data, ignore_index=True) if all_data else None
+
+
+def _save_violin(fig, ax, title, xlabel, ylabel, out_path, xrot=0):
+    ax.set_title(title, fontsize=13)
+    ax.set_xlabel(xlabel, fontsize=11)
+    ax.set_ylabel(ylabel, fontsize=11)
+    plt.setp(ax.get_xticklabels(), rotation=xrot, ha="right" if xrot else "center", fontsize=9)
+    ax.legend(title="Modell")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    print(f"[violin] Saved to {out_path}")
+    plt.close(fig)
+
+
+def plot_violin_cv_vs_kalman():
+    pairs = [("constant_velocity", "CV"), ("kalman", "Kalman")]
+    plot_df = _load_per_file_rmse(pairs)
+    if plot_df is None:
+        return
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Jahr", 0, "per_year"),
+        ("month", "Monat", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            split=True, inner="quartile", cut=0, scale="width", ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: CV vs Kalman ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            plots_dir / f"{EVAL_SPLIT}_violin_cv_vs_kalman_{suffix}.png",
+            xrot=xrot,
+        )
+
+
+def plot_violin_ctrv_vs_ekf():
+    pairs = [("ctrv", "CTRV"), ("ctrv_ekf", "CTRV EKF")]
+    plot_df = _load_per_file_rmse(pairs)
+    if plot_df is None:
+        return
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Jahr", 0, "per_year"),
+        ("month", "Monat", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            split=True, inner="quartile", cut=0, scale="width", ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: CTRV vs CTRV EKF ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            plots_dir / f"{EVAL_SPLIT}_violin_ctrv_vs_ekf_{suffix}.png",
+            xrot=xrot,
+        )
+
+
 if __name__ == "__main__":
     print(f"Using configured run directory: {selected_run_dir}")
     print(f"Reading diagnostics from: {diagnostics_dir}")
@@ -481,5 +560,7 @@ if __name__ == "__main__":
     plot_ade_horizon()
     plot_monthly_metrics()
     plot_tuning_results()
+    plot_violin_cv_vs_kalman()
+    plot_violin_ctrv_vs_ekf()
 
     print("\nDone.")
