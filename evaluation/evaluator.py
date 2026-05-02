@@ -10,7 +10,7 @@ from .runtime_config import subsample_items
 CONTEXT_LABELS = {'river', 'channel', 'harbour', 'lock', 'unknown'}
 MONTH_PATTERN = re.compile(r"(\d{4})-(\d{2})_\d{2}$")
 
-TRACK_USECOLS = ['track_id', 'role', 't_utc', 'x', 'y', 'rot', 'vessel_id', 'context', 'dx_norm', 'dy_norm']
+TRACK_USECOLS = ['track_id', 'role', 't_utc', 'x', 'y', 'rot', 'vessel_id', 'context', 'dx', 'dy', 'dx_norm', 'dy_norm', 'sog_norm', 'cog_sin_norm', 'cog_cos_norm', 'dt_norm', 'rot_norm']
 
 #internal functions marked _name
 
@@ -87,16 +87,30 @@ def load_tracks_cached_numpy(data_dir, split='test', context_filter=None, sample
             x_ctx = ctx['x'].to_numpy(dtype=float, copy=True)
             y_ctx = ctx['y'].to_numpy(dtype=float, copy=True)
             rot_ctx = ctx['rot'].to_numpy(dtype=float, copy=True)
+            dx_ctx = ctx['dx'].to_numpy(dtype=float, copy=True)
+            dy_ctx = ctx['dy'].to_numpy(dtype=float, copy=True)
             dx_norm_ctx = ctx['dx_norm'].to_numpy(dtype=float, copy=True)
             dy_norm_ctx = ctx['dy_norm'].to_numpy(dtype=float, copy=True)
+            sog_norm_ctx = ctx['sog_norm'].to_numpy(dtype=float, copy=True)
+            cog_sin_norm_ctx = ctx['cog_sin_norm'].to_numpy(dtype=float, copy=True)
+            cog_cos_norm_ctx = ctx['cog_cos_norm'].to_numpy(dtype=float, copy=True)
+            dt_norm_ctx = ctx['dt_norm'].to_numpy(dtype=float, copy=True)
+            rot_norm_ctx = ctx['rot_norm'].to_numpy(dtype=float, copy=True)
             true_xy = pred[['x', 'y']].to_numpy(dtype=float, copy=True)
 
             cached_tracks.append({
                 'x_ctx': x_ctx,
                 'y_ctx': y_ctx,
                 'rot_ctx': rot_ctx,
+                'dx_ctx': dx_ctx,
+                'dy_ctx': dy_ctx,
                 'dx_norm_ctx': dx_norm_ctx,
                 'dy_norm_ctx': dy_norm_ctx,
+                'sog_norm_ctx': sog_norm_ctx,
+                'cog_sin_norm_ctx': cog_sin_norm_ctx,
+                'cog_cos_norm_ctx': cog_cos_norm_ctx,
+                'dt_norm_ctx': dt_norm_ctx,
+                'rot_norm_ctx': rot_norm_ctx,
                 'last_x': float(x_ctx[-1]),
                 'last_y': float(y_ctx[-1]),
                 'true_xy': true_xy,
@@ -146,8 +160,20 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
         'context',
         'pred_step',
         't_utc_pred',
+        'dx_pred_q10',
+        'dy_pred_q10',
+        'dx_pred_q50',
+        'dy_pred_q50',
+        'dx_pred_q90',
+        'dy_pred_q90',
         'x_pred',
         'y_pred',
+        'x_pred_q10',
+        'y_pred_q10',
+        'x_pred_q50',
+        'y_pred_q50',
+        'x_pred_q90',
+        'y_pred_q90',
         'x_gt',
         'y_gt',
     ]
@@ -164,8 +190,12 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
             last_x = context_df['x'].iloc[-1]
             last_y = context_df['y'].iloc[-1]
 
-            displacements = model.predict(context_df, n_pred_steps)
+            quantile_predictions = model.predict_quantiles(context_df, n_pred_steps) if hasattr(model, 'predict_quantiles') else None
+            displacements = quantile_predictions[0.5] if quantile_predictions is not None else model.predict(context_df, n_pred_steps)
             pred_positions = reconstruct_positions(last_x, last_y, displacements)
+            lower_positions = reconstruct_positions(last_x, last_y, quantile_predictions[0.1]) if quantile_predictions is not None else None
+            median_positions = reconstruct_positions(last_x, last_y, quantile_predictions[0.5]) if quantile_predictions is not None else None
+            upper_positions = reconstruct_positions(last_x, last_y, quantile_predictions[0.9]) if quantile_predictions is not None else None
 
             if len(pred_positions) != n_pred_steps:
                 continue
@@ -187,8 +217,20 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
                     'context': context_label,
                     'pred_step': i + 1,
                     't_utc_pred': pred_df['t_utc'].iloc[i] if 't_utc' in pred_df else '',
+                    'dx_pred_q10': float(quantile_predictions[0.1][i, 0]) if quantile_predictions is not None else '',
+                    'dy_pred_q10': float(quantile_predictions[0.1][i, 1]) if quantile_predictions is not None else '',
+                    'dx_pred_q50': float(quantile_predictions[0.5][i, 0]) if quantile_predictions is not None else '',
+                    'dy_pred_q50': float(quantile_predictions[0.5][i, 1]) if quantile_predictions is not None else '',
+                    'dx_pred_q90': float(quantile_predictions[0.9][i, 0]) if quantile_predictions is not None else '',
+                    'dy_pred_q90': float(quantile_predictions[0.9][i, 1]) if quantile_predictions is not None else '',
                     'x_pred': float(pred_positions[i, 0]),
                     'y_pred': float(pred_positions[i, 1]),
+                    'x_pred_q10': float(lower_positions[i, 0]) if lower_positions is not None else '',
+                    'y_pred_q10': float(lower_positions[i, 1]) if lower_positions is not None else '',
+                    'x_pred_q50': float(median_positions[i, 0]) if median_positions is not None else '',
+                    'y_pred_q50': float(median_positions[i, 1]) if median_positions is not None else '',
+                    'x_pred_q90': float(upper_positions[i, 0]) if upper_positions is not None else '',
+                    'y_pred_q90': float(upper_positions[i, 1]) if upper_positions is not None else '',
                     'x_gt': float(pred_df['x'].iloc[i]),
                     'y_gt': float(pred_df['y'].iloc[i]),
                 })

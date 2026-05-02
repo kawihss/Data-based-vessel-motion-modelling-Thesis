@@ -28,6 +28,7 @@ PLOT_HYBRID = bool(PLOT_FLAGS["hybrid_cv_ctrv"])
 PLOT_KALMAN = bool(PLOT_FLAGS["kalman"])
 PLOT_CTRV_EKF = bool(PLOT_FLAGS["ctrv_ekf"])
 PLOT_TIREX_LSTM = bool(PLOT_FLAGS["tirex_lstm"])
+PLOT_CHRONOS2_ZERO_SHOT = bool(PLOT_FLAGS.get("chronos2_zero_shot", False))
 
 _ALL_MODEL_LABELS = {
     "constant_velocity": "Constant Velocity",
@@ -37,6 +38,7 @@ _ALL_MODEL_LABELS = {
     "kalman": "Kalman",
     "ctrv_ekf": "CTRV EKF",
     "tirex_lstm": "TiRex LSTM",
+    "chronos2_zero_shot": "Chronos-2 Zero-Shot",
 }
 _MODEL_FLAGS = {
     "constant_velocity": PLOT_CONSTANT_VELOCITY,
@@ -46,10 +48,14 @@ _MODEL_FLAGS = {
     "kalman": PLOT_KALMAN,
     "ctrv_ekf": PLOT_CTRV_EKF,
     "tirex_lstm": PLOT_TIREX_LSTM,
+    "chronos2_zero_shot": PLOT_CHRONOS2_ZERO_SHOT,
 }
 ALL_MODEL_LABELS = {k: v for k, v in _ALL_MODEL_LABELS.items() if _MODEL_FLAGS[k]}
 
 METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]  # columns expected in per-month CSVs
+CONTEXTS_TO_PLOT = ["harbour", "river", "channel", "lock"]
+CONTEXT_METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]
+UNCERTAINTY_METRICS_TO_PLOT = ["MIW", "Coverage", "IQR", "PinballLoss", "CRPSApprox", "Winkler80"]
 
 run_paths = resolve_run_paths(PROJECT_ROOT, CONFIG, create=False)
 selected_run_dir = run_paths["run_dir"]
@@ -149,6 +155,101 @@ def plot_monthly_metrics():
         out = plots_dir / f"{EVAL_SPLIT}_monthly_{metric.lower()}.png"
         fig.savefig(out, dpi=150)
         print(f"[monthly/{metric}] Saved to {out}")
+        plt.close(fig)
+
+
+def _plot_context_metric_group(metrics, output_prefix):
+    for metric in metrics:
+        fig, ax = plt.subplots(figsize=(11, 5))
+        any_plotted = False
+        x_positions = np.arange(len(CONTEXTS_TO_PLOT), dtype=float)
+        width = 0.8 / max(len(ALL_MODEL_LABELS), 1)
+
+        for idx, (key, label) in enumerate(ALL_MODEL_LABELS.items()):
+            context_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_context_{key}.csv"
+            if not context_path.exists():
+                print(f"[context/{metric}] No per-context file for '{label}', skipping.")
+                continue
+            df = pd.read_csv(context_path)
+            if "context" not in df.columns or metric not in df.columns:
+                print(f"[context/{metric}] '{label}' CSV missing 'context' or '{metric}' column, skipping.")
+                continue
+
+            aligned = (
+                df.set_index("context")
+                .reindex(CONTEXTS_TO_PLOT)[metric]
+                .astype(float)
+            )
+            offset = (idx - (len(ALL_MODEL_LABELS) - 1) / 2.0) * width
+            ax.bar(x_positions + offset, aligned.values, width=width, label=label)
+            any_plotted = True
+
+        if not any_plotted:
+            print(f"[context/{metric}] No data found.")
+            plt.close(fig)
+            continue
+
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(CONTEXTS_TO_PLOT)
+        ax.set_xlabel("Context", fontsize=11)
+        ax.set_ylabel(metric, fontsize=11)
+        ax.set_title(f"{metric} by Geographic Context ({EVAL_SPLIT} split)", fontsize=13)
+        if metric == "Coverage":
+            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.2f"))
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        out = plots_dir / f"{EVAL_SPLIT}_{output_prefix}_{metric.lower()}.png"
+        fig.savefig(out, dpi=150)
+        print(f"[context/{metric}] Saved to {out}")
+        plt.close(fig)
+
+
+def plot_context_metrics():
+    _plot_context_metric_group(CONTEXT_METRICS_TO_PLOT, output_prefix="context")
+
+
+def plot_uncertainty_metrics():
+    _plot_context_metric_group(UNCERTAINTY_METRICS_TO_PLOT, output_prefix="uncertainty")
+
+
+def plot_channel_importance():
+    for key, label in ALL_MODEL_LABELS.items():
+        importance_path = diagnostics_dir / f"{EVAL_SPLIT}_channel_importance_{key}.csv"
+        if not importance_path.exists():
+            continue
+
+        df = pd.read_csv(importance_path)
+        if df.empty:
+            continue
+
+        fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharey=True)
+        axes = axes.flatten()
+        any_plotted = False
+
+        for axis, context_label in zip(axes, CONTEXTS_TO_PLOT):
+            ctx_df = df[df["context"] == context_label].copy()
+            if ctx_df.empty:
+                axis.set_visible(False)
+                continue
+
+            ctx_df = ctx_df.sort_values("importance", ascending=False)
+            axis.bar(ctx_df["covariate"], ctx_df["importance"], color="steelblue")
+            axis.set_title(context_label)
+            axis.set_ylim(0.0, 1.0)
+            axis.grid(True, alpha=0.3)
+            axis.tick_params(axis="x", rotation=45)
+            any_plotted = True
+
+        if not any_plotted:
+            plt.close(fig)
+            continue
+
+        fig.suptitle(f"Channel Importance by Context ({label})", fontsize=13)
+        fig.tight_layout()
+        out = plots_dir / f"{EVAL_SPLIT}_channel_importance_{key}.png"
+        fig.savefig(out, dpi=150)
+        print(f"[channel-importance] Saved to {out}")
         plt.close(fig)
 
 
@@ -480,6 +581,9 @@ if __name__ == "__main__":
 
     plot_ade_horizon()
     plot_monthly_metrics()
+    plot_context_metrics()
+    plot_uncertainty_metrics()
+    plot_channel_importance()
     plot_tuning_results()
 
     print("\nDone.")

@@ -1,12 +1,12 @@
 run:
-  name: baseline_river_river
-  description: Running all baselines models on river context tracks, with river context filter for tuning and evaluation.
+  name: tesingchronos
+  description: test
   seed: 42
-  sample_pct: 100 #of 100
+  sample_pct: 1 #of 100
 
 sampling:
-  tuning_validation_pct: 100 #of 100
-  evaluation_pct: 100 #of 100
+  tuning_validation_pct: 1 #of 100
+  evaluation_pct: 1 #of 100
 
 paths:
   baseline_root: output/08_baseline_results
@@ -22,18 +22,26 @@ evaluation:
 
 models:
   cv: true
-  ctrv: true
-  ctrv_arc: true
-  hybrid: true
-  kalman: true
-  ctrv_ekf: true
+  ctrv: false
+  ctrv_arc: false
+  hybrid: false
+  kalman: false
+  ctrv_ekf: false
   tirex_lstm: false
+  chronos2_zero_shot: false
   tirex:
     model_name: NX-AI/TiRex
     device: cuda # null-> auto-detect, or specify "cpu" or "cuda"
     backend: cuda # torch as fallback for windows, use cuda on linux, recommended and faster
     compile_model: true
     scaler_path: output/05_normalized/scalers.pkl
+  chronos2:
+    model_name: amazon/chronos-2
+    device_map: cuda
+    torch_dtype: float32
+    batch_size: 1
+    context_length: 10
+    prediction_length: 10
 
 tuning:
   n_trials_standard: 30
@@ -54,3 +62,4 @@ plotting:
     kalman: true
     ctrv_ekf: true
     tirex_lstm: false
+    chronos2_zero_shot: false

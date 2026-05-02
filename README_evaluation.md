@@ -37,6 +37,7 @@ Current baseline models:
 - `ConstantTurnRateVelocityModel` (CTRV)
 - `HybridCVCTRVModel` (Hybrid)
 - `KalmanFilter` (Kalman with CV state model)
+- `Chronos2ZeroShotModel` (Chronos-2 base, zero-shot, fixed 10-step context and 10-step prediction horizon, no tuning)
 
 CV and CTRV use one parameterization:
 
@@ -63,6 +64,9 @@ Provides trajectory quality metrics:
 - FDE
 - RMSE
 - ADE per prediction step
+- MIW from the `[q=0.1, q=0.9]` interval on predicted `dx`/`dy` displacements
+- Coverage of the `[q=0.1, q=0.9]` interval on predicted `dx`/`dy` displacements
+- Additional quantile-derived metrics for Chronos-2: IQR, pinball loss, CRPS approximation, Winkler interval score
 
 ### `evaluation/evaluator.py`
 
@@ -132,6 +136,14 @@ Current behavior:
 4. computes and writes per-file and per-month metrics,
 5. optionally exports per-model prediction CSVs,
 6. writes outputs under `output/08_baseline_results/`.
+
+Chronos-2 differs from the tuned baseline models in one important way:
+
+1. it runs strictly zero-shot,
+2. it does not read hyperparameters from `tuning_best_params_val.csv`,
+3. it uses `q=0.5` as the point forecast,
+4. it writes per-context diagnostics for `harbour`, `river`, `channel`, and `lock`,
+5. it exports quantile-aware diagnostics and channel-importance tables when enabled.
 
 Current baseline output structure:
 

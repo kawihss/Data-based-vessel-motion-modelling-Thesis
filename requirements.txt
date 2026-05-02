@@ -29,6 +29,7 @@ optuna
 filterpy
 transformers
 accelerate
+chronos-forecasting>=2.0
 tirex-ts
 
 #Also requires NVIDIA CUDA 8.0 or later (see 
