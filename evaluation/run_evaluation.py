@@ -9,7 +9,7 @@ from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityMode
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
 from models.sequence import TirexLSTMModel, Chronos2ZeroShotModel
 from evaluation.evaluator import export_predictions_for_file, _resolve_files, _read_track_file, _iter_track_groups, reconstruct_positions, _extract_month_label
-from evaluation.metrics import evaluate_trajectory, evaluate_quantile_forecast, calculate_channel_importance
+from evaluation.metrics import evaluate_trajectory, evaluate_quantile_forecast, calculate_channel_importance, calculate_timestep_importance
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths, update_latest_run_pointer, write_run_metadata, get_sampling_value, subsample_items
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -135,6 +135,7 @@ def _make_context_bucket():
         'quantiles': {},
         'covariates': {column: [] for column in CHRONOS_COVARIATE_COLUMNS},
         'motion_magnitude': [],
+        'future_motion_score': [],
     }
 
 if __name__ == "__main__":
@@ -340,6 +341,9 @@ if __name__ == "__main__":
                         bucket['motion_magnitude'].append(
                             np.abs(ctx_sorted['dx_norm'].to_numpy(dtype=float, copy=True)) + np.abs(ctx_sorted['dy_norm'].to_numpy(dtype=float, copy=True))
                         )
+                        bucket['future_motion_score'].append(
+                            float(np.sqrt((true_displacements ** 2).sum(axis=1)).mean())
+                        )
 
             if file_true:
                 file_metrics = evaluate_trajectory(np.array(file_true), np.array(file_pred))
@@ -434,6 +438,7 @@ if __name__ == "__main__":
 
         per_context_rows = []
         channel_importance_rows = []
+        timestep_importance_rows = []
         for context_label, bucket in per_context_data.items():
             if not bucket['true_pos']:
                 continue
@@ -465,6 +470,17 @@ if __name__ == "__main__":
                         'importance': value,
                         'sample_pct': EVALUATION_PCT,
                     })
+                timestep_importance = calculate_timestep_importance(
+                    bucket['motion_magnitude'],
+                    bucket['future_motion_score'],
+                )
+                for timestep, value in timestep_importance.items():
+                    timestep_importance_rows.append({
+                        'context': context_label,
+                        'timestep': int(timestep),
+                        'importance': value,
+                        'sample_pct': EVALUATION_PCT,
+                    })
             per_context_rows.append(context_row)
 
         if per_context_rows:
@@ -473,6 +489,9 @@ if __name__ == "__main__":
         if channel_importance_rows:
             importance_path = test_diagnostics_dir / f"{EVAL_SPLIT}_channel_importance_{model_key}.csv"
             pd.DataFrame(channel_importance_rows).to_csv(importance_path, index=False)
+        if timestep_importance_rows:
+            timestep_path = test_diagnostics_dir / f"{EVAL_SPLIT}_timestep_importance_{model_key}.csv"
+            pd.DataFrame(timestep_importance_rows).to_csv(timestep_path, index=False)
 
         ade_per_step = metrics.get('ADE_per_step')
         if ade_per_step is not None and len(ade_per_step) > 0:

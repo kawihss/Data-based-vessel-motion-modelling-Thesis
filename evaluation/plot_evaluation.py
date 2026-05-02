@@ -253,6 +253,49 @@ def plot_channel_importance():
         plt.close(fig)
 
 
+def plot_timestep_importance():
+    for key, label in ALL_MODEL_LABELS.items():
+        importance_path = diagnostics_dir / f"{EVAL_SPLIT}_timestep_importance_{key}.csv"
+        if not importance_path.exists():
+            continue
+
+        df = pd.read_csv(importance_path)
+        if df.empty:
+            continue
+
+        fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharey=True)
+        axes = axes.flatten()
+        any_plotted = False
+
+        for axis, context_label in zip(axes, CONTEXTS_TO_PLOT):
+            ctx_df = df[df["context"] == context_label].copy()
+            if ctx_df.empty:
+                axis.set_visible(False)
+                continue
+
+            ctx_df = ctx_df.sort_values("timestep")
+            ctx_df = ctx_df[ctx_df["timestep"] > 1]
+            axis.plot(ctx_df["timestep"], ctx_df["importance"], marker="o", color="darkorange")
+            axis.set_title(context_label)
+            axis.set_ylim(0.0, 1.0)
+            axis.set_xlabel("Context Timestep")
+            axis.grid(True, alpha=0.3)
+            any_plotted = True
+
+        if not any_plotted:
+            plt.close(fig)
+            continue
+
+        axes[0].set_ylabel("Normalized Importance")
+        axes[2].set_ylabel("Normalized Importance")
+        fig.suptitle(f"Timestep Importance by Context ({label})", fontsize=13)
+        fig.tight_layout()
+        out = plots_dir / f"{EVAL_SPLIT}_timestep_importance_{key}.png"
+        fig.savefig(out, dpi=150)
+        print(f"[timestep-importance] Saved to {out}")
+        plt.close(fig)
+
+
 
 def plot_results(df, best_steps, best_rmse, model_label, output_path):
     df_sorted = df.sort_values("params_velocity_steps")
@@ -584,6 +627,7 @@ if __name__ == "__main__":
     plot_context_metrics()
     plot_uncertainty_metrics()
     plot_channel_importance()
+    plot_timestep_importance()
     plot_tuning_results()
 
     print("\nDone.")
