@@ -44,14 +44,6 @@ def calculate_coverage(y_true, y_quantiles, lower_q=0.1, upper_q=0.9):
     return float(inside.mean())
 
 
-def calculate_pinball_loss(y_true, y_quantiles):
-    losses = []
-    for quantile, y_pred in sorted(y_quantiles.items()):
-        error = y_true - np.asarray(y_pred, dtype=float)
-        losses.append(np.maximum(quantile * error, (quantile - 1.0) * error).mean())
-    return float(np.mean(losses))
-
-
 def calculate_crps_approximation(y_true, y_quantiles):
     quantiles = np.array(sorted(y_quantiles), dtype=float)
     losses = np.array([
@@ -80,7 +72,6 @@ def evaluate_quantile_forecast(y_true, y_quantiles):
         "MIW": calculate_mean_interval_width(y_quantiles, lower_q=0.1, upper_q=0.9),
         "Coverage": calculate_coverage(y_true, y_quantiles, lower_q=0.1, upper_q=0.9),
         "IQR": calculate_mean_interval_width(y_quantiles, lower_q=0.25, upper_q=0.75),
-        "PinballLoss": calculate_pinball_loss(y_true, y_quantiles),
         "CRPSApprox": calculate_crps_approximation(y_true, y_quantiles),
         "Winkler80": calculate_winkler_score(y_true, y_quantiles, lower_q=0.1, upper_q=0.9),
     }

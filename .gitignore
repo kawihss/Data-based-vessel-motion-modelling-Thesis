@@ -4,6 +4,7 @@ output*/
 cache/
 .vscode/
 venv/
+.venv/
 
 #ignore /File types
 *.csv

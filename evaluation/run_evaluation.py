@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import joblib
 import pandas as pd
 import numpy as np
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, ConstantTurnRateVelocityArcModel, HybridCVCTRVModel
@@ -37,9 +38,8 @@ CHRONOS2_DEVICE_MAP = CHRONOS2_CFG.get("device_map", None)
 CHRONOS2_DEVICE_MAP = None if CHRONOS2_DEVICE_MAP is None else (str(CHRONOS2_DEVICE_MAP).strip() or None)
 CHRONOS2_TORCH_DTYPE = CHRONOS2_CFG.get("torch_dtype", None)
 CHRONOS2_TORCH_DTYPE = None if CHRONOS2_TORCH_DTYPE is None else (str(CHRONOS2_TORCH_DTYPE).strip() or None)
-CHRONOS2_BATCH_SIZE = int(CHRONOS2_CFG.get("batch_size", 1))
-CHRONOS2_CONTEXT_LENGTH = int(CHRONOS2_CFG.get("context_length", 10))
-CHRONOS2_PREDICTION_LENGTH = int(CHRONOS2_CFG.get("prediction_length", 10))
+CHRONOS2_SCALER_PATH = CHRONOS2_CFG.get("scaler_path", "output/05_normalized/scalers.pkl")
+CHRONOS2_SCALER_PATH = str(CHRONOS2_SCALER_PATH).strip() if CHRONOS2_SCALER_PATH is not None else "output/05_normalized/scalers.pkl"
 EVAL_SPLIT = str(CONFIG["data"]["split"])
 CONTEXT_FILTER_EVALUATION = CONFIG["data"]["context_filter_evaluation"]
 EXPORT_PREDICTIONS = bool(CONFIG["evaluation"]["export_predictions"])
@@ -59,6 +59,34 @@ CHRONOS_COVARIATE_COLUMNS = (
     "rot_norm",
 )
 REPORT_CONTEXTS = ("harbour", "river", "channel", "lock")
+
+_DXDY_SCALER_PARAMS_CACHE = {}
+
+def _load_dxdy_scaler_params(scaler_path_str):
+    """Load dx/dy mean and scale from scalers.pkl, cached by path."""
+    cached = _DXDY_SCALER_PARAMS_CACHE.get(scaler_path_str)
+    if cached is not None:
+        return cached
+    scalers = joblib.load(scaler_path_str)
+    global_scaler = scalers.get("global_scaler", {})
+    means = np.asarray(global_scaler.get("mean", []), dtype=float)
+    scales = np.asarray(global_scaler.get("scale", []), dtype=float)
+    params = {
+        "dx_mean": float(means[0]),
+        "dx_scale": float(scales[0]),
+        "dy_mean": float(means[1]),
+        "dy_scale": float(scales[1]),
+    }
+    _DXDY_SCALER_PARAMS_CACHE[scaler_path_str] = params
+    return params
+
+
+def _denormalize_true_displacements(dx_norm, dy_norm, scaler_path_str):
+    """Convert normalized dx_norm/dy_norm ground-truth to real metres."""
+    p = _load_dxdy_scaler_params(scaler_path_str)
+    dx = p["dx_scale"] * np.asarray(dx_norm, dtype=float) + p["dx_mean"]
+    dy = p["dy_scale"] * np.asarray(dy_norm, dtype=float) + p["dy_mean"]
+    return np.column_stack([dx, dy])
 
 
 def _load_tuned_values(diagnostics_dir):
@@ -199,9 +227,7 @@ if __name__ == "__main__":
             "model_name": CHRONOS2_MODEL_NAME,
             "device_map": CHRONOS2_DEVICE_MAP,
             "torch_dtype": CHRONOS2_TORCH_DTYPE,
-            "batch_size": CHRONOS2_BATCH_SIZE,
-            "context_length": CHRONOS2_CONTEXT_LENGTH,
-            "prediction_length": CHRONOS2_PREDICTION_LENGTH,
+            "scaler_path": str(PROJECT_ROOT / CHRONOS2_SCALER_PATH),
         }
 
     models = []
@@ -282,7 +308,12 @@ if __name__ == "__main__":
                 displacements = np.asarray(quantile_predictions[0.5], dtype=float) if quantile_predictions is not None else model.predict(context_df, n_pred_steps)
                 pred_positions = reconstruct_positions(last_x, last_y, displacements)
                 true_positions = pred_df[['x', 'y']].values
-                true_displacements = pred_df[['dx', 'dy']].values
+                # Denormalize ground-truth displacements to real metres so they match
+                # the denormalized quantile predictions from Chronos/TiRex.
+                _active_scaler_path = str(PROJECT_ROOT / CHRONOS2_SCALER_PATH)
+                true_displacements = _denormalize_true_displacements(
+                    pred_df['dx_norm'].values, pred_df['dy_norm'].values, _active_scaler_path
+                )
                 context_label = str(context_df['context'].iloc[-1])
                 ctx_sorted = context_df.sort_values('t_utc')
 
@@ -307,7 +338,7 @@ if __name__ == "__main__":
                         for covariate in CHRONOS_COVARIATE_COLUMNS:
                             bucket['covariates'][covariate].append(ctx_sorted[covariate].to_numpy(dtype=float, copy=True))
                         bucket['motion_magnitude'].append(
-                            np.abs(ctx_sorted['dx'].to_numpy(dtype=float, copy=True)) + np.abs(ctx_sorted['dy'].to_numpy(dtype=float, copy=True))
+                            np.abs(ctx_sorted['dx_norm'].to_numpy(dtype=float, copy=True)) + np.abs(ctx_sorted['dy_norm'].to_numpy(dtype=float, copy=True))
                         )
 
             if file_true:
@@ -370,7 +401,6 @@ if __name__ == "__main__":
             'MIW': metrics.get('MIW', np.nan),
             'Coverage': metrics.get('Coverage', np.nan),
             'IQR': metrics.get('IQR', np.nan),
-            'PinballLoss': metrics.get('PinballLoss', np.nan),
             'CRPSApprox': metrics.get('CRPSApprox', np.nan),
             'Winkler80': metrics.get('Winkler80', np.nan),
             'n_tracks': metrics.get('n_tracks'),

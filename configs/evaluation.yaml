@@ -1,12 +1,12 @@
 run:
   name: tesingchronos
-  description: test
+  description: test on tiny dataset but fully
   seed: 42
-  sample_pct: 1 #of 100
+  sample_pct: 100 #of 100
 
 sampling:
-  tuning_validation_pct: 1 #of 100
-  evaluation_pct: 1 #of 100
+  tuning_validation_pct: 100 #of 100
+  evaluation_pct: 100 #of 100
 
 paths:
   baseline_root: output/08_baseline_results
@@ -14,8 +14,8 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: river
-  context_filter_evaluation: river
+  context_filter_tuning: null
+  context_filter_evaluation: null
 
 evaluation:
   export_predictions: true
@@ -28,7 +28,7 @@ models:
   kalman: false
   ctrv_ekf: false
   tirex_lstm: false
-  chronos2_zero_shot: false
+  chronos2_zero_shot: true
   tirex:
     model_name: NX-AI/TiRex
     device: cuda # null-> auto-detect, or specify "cpu" or "cuda"
@@ -39,9 +39,9 @@ models:
     model_name: amazon/chronos-2
     device_map: cuda
     torch_dtype: float32
-    batch_size: 1
     context_length: 10
     prediction_length: 10
+    scaler_path: output/05_normalized/scalers.pkl
 
 tuning:
   n_trials_standard: 30
@@ -56,10 +56,10 @@ plotting:
   step_duration_s: 30
   models:
     constant_velocity: true
-    ctrv: true
-    ctrv_arc: true
-    hybrid_cv_ctrv: true
-    kalman: true
+    ctrv: false
+    ctrv_arc: false
+    hybrid_cv_ctrv: false
+    kalman: false
     ctrv_ekf: true
     tirex_lstm: false
-    chronos2_zero_shot: false
+    chronos2_zero_shot: true

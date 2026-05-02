@@ -10,7 +10,7 @@ from .runtime_config import subsample_items
 CONTEXT_LABELS = {'river', 'channel', 'harbour', 'lock', 'unknown'}
 MONTH_PATTERN = re.compile(r"(\d{4})-(\d{2})_\d{2}$")
 
-TRACK_USECOLS = ['track_id', 'role', 't_utc', 'x', 'y', 'rot', 'vessel_id', 'context', 'dx', 'dy', 'dx_norm', 'dy_norm', 'sog_norm', 'cog_sin_norm', 'cog_cos_norm', 'dt_norm', 'rot_norm']
+TRACK_USECOLS = ['track_id', 'role', 't_utc', 'x', 'y', 'rot', 'vessel_id', 'context', 'dx_norm', 'dy_norm', 'sog_norm', 'cog_sin_norm', 'cog_cos_norm', 'dt_norm', 'rot_norm']
 
 #internal functions marked _name
 
@@ -87,8 +87,6 @@ def load_tracks_cached_numpy(data_dir, split='test', context_filter=None, sample
             x_ctx = ctx['x'].to_numpy(dtype=float, copy=True)
             y_ctx = ctx['y'].to_numpy(dtype=float, copy=True)
             rot_ctx = ctx['rot'].to_numpy(dtype=float, copy=True)
-            dx_ctx = ctx['dx'].to_numpy(dtype=float, copy=True)
-            dy_ctx = ctx['dy'].to_numpy(dtype=float, copy=True)
             dx_norm_ctx = ctx['dx_norm'].to_numpy(dtype=float, copy=True)
             dy_norm_ctx = ctx['dy_norm'].to_numpy(dtype=float, copy=True)
             sog_norm_ctx = ctx['sog_norm'].to_numpy(dtype=float, copy=True)
@@ -102,8 +100,6 @@ def load_tracks_cached_numpy(data_dir, split='test', context_filter=None, sample
                 'x_ctx': x_ctx,
                 'y_ctx': y_ctx,
                 'rot_ctx': rot_ctx,
-                'dx_ctx': dx_ctx,
-                'dy_ctx': dy_ctx,
                 'dx_norm_ctx': dx_norm_ctx,
                 'dy_norm_ctx': dy_norm_ctx,
                 'sog_norm_ctx': sog_norm_ctx,
