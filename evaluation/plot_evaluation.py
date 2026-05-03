@@ -55,7 +55,7 @@ ALL_MODEL_LABELS = {k: v for k, v in _ALL_MODEL_LABELS.items() if _MODEL_FLAGS[k
 METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]  # columns expected in per-month CSVs
 CONTEXTS_TO_PLOT = ["harbour", "river", "channel", "lock"]
 CONTEXT_METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]
-UNCERTAINTY_METRICS_TO_PLOT = ["MIW", "Coverage", "IQR", "CRPSApprox", "Winkler80"]
+UNCERTAINTY_METRICS_TO_PLOT = ["MIW", "Coverage", "IQR", "Winkler80"]
 
 run_paths = resolve_run_paths(PROJECT_ROOT, CONFIG, create=False)
 selected_run_dir = run_paths["run_dir"]

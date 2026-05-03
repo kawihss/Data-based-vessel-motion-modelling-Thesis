@@ -405,7 +405,6 @@ if __name__ == "__main__":
             'MIW': metrics.get('MIW', np.nan),
             'Coverage': metrics.get('Coverage', np.nan),
             'IQR': metrics.get('IQR', np.nan),
-            'CRPSApprox': metrics.get('CRPSApprox', np.nan),
             'Winkler80': metrics.get('Winkler80', np.nan),
             'n_tracks': metrics.get('n_tracks'),
             'sample_pct': EVALUATION_PCT,

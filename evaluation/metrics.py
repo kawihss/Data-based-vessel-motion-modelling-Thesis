@@ -44,18 +44,6 @@ def calculate_coverage(y_true, y_quantiles, lower_q=0.1, upper_q=0.9):
     return float(inside.mean())
 
 
-def calculate_crps_approximation(y_true, y_quantiles):
-    quantiles = np.array(sorted(y_quantiles), dtype=float)
-    losses = np.array([
-        np.maximum(
-            quantile * (y_true - np.asarray(y_quantiles[quantile], dtype=float)),
-            (quantile - 1.0) * (y_true - np.asarray(y_quantiles[quantile], dtype=float)),
-        ).mean()
-        for quantile in quantiles
-    ], dtype=float)
-    return float(2.0 * np.trapezoid(losses, quantiles))
-
-
 def calculate_winkler_score(y_true, y_quantiles, lower_q=0.1, upper_q=0.9):
     lower = _require_quantile(y_quantiles, lower_q)
     upper = _require_quantile(y_quantiles, upper_q)
@@ -72,7 +60,6 @@ def evaluate_quantile_forecast(y_true, y_quantiles):
         "MIW": calculate_mean_interval_width(y_quantiles, lower_q=0.1, upper_q=0.9),
         "Coverage": calculate_coverage(y_true, y_quantiles, lower_q=0.1, upper_q=0.9),
         "IQR": calculate_mean_interval_width(y_quantiles, lower_q=0.25, upper_q=0.75),
-        "CRPSApprox": calculate_crps_approximation(y_true, y_quantiles),
         "Winkler80": calculate_winkler_score(y_true, y_quantiles, lower_q=0.1, upper_q=0.9),
     }
 
