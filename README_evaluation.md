@@ -21,6 +21,7 @@ Current runtime data paths:
 - Python dependencies: see `requirements.txt`
 - NVIDIA CUDA 8.0 or later for the tirex library
 - RAM: 32+ GB recommended (tested on 48GB+ machines) for caching track data during tuning and evaluation
+- Chronos-2 on Linux currently requires `export HF_HUB_DISABLE_XET=1` before running evaluation or tuning so model downloads work reliably
 
 
 ## Model Layer
@@ -153,6 +154,8 @@ Chronos-2 differs from the tuned baseline models in one important way:
 3. it uses `q=0.5` as the point forecast,
 4. it writes per-context diagnostics for `harbour`, `river`, `channel`, and `lock`,
 5. it exports quantile-aware diagnostics and channel-importance tables when enabled.
+
+On Linux, set `HF_HUB_DISABLE_XET=1` in the shell before running Chronos-2, for example with `export HF_HUB_DISABLE_XET=1`.
 
 Current baseline output structure:
 

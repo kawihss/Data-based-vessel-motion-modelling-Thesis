@@ -2,11 +2,11 @@ run:
   name: default
   description: text description of the run
   seed: 42
-  sample_pct: 100 #of 100
+  sample_pct: 1 #of 100
 
 sampling:
-  tuning_validation_pct: 100 #of 100
-  evaluation_pct: 100 #of 100
+  tuning_validation_pct: 1 #of 100
+  evaluation_pct: 1 #of 100
 
 paths:
   baseline_root: output/08_baseline_results
@@ -39,7 +39,13 @@ models:
     scaler_path: output/05_normalized/scalers.pkl
   chronos2:
     model_name: amazon/chronos-2
-    device_map: cuda
+    # device_map controls which device(s) the model is loaded onto.
+    # Use "cuda" for the first GPU, "cuda:N" for a specific GPU by index, starting at 0,
+    # "cpu" to force CPU, or "auto".
+    #
+    # max_memory limits how much GPU memory (in GB) is allocated per device (keyed by GPU index).
+    device_map: cuda:1
+    max_memory: {1: "11GB"}
     torch_dtype: float32
     context_length: 10
     prediction_length: 10

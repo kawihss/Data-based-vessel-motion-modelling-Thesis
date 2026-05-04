@@ -18,10 +18,11 @@ class Chronos2ZeroShotModel(BaselineModel):
     _PIPELINE_CACHE = {}
     _SCALER_CACHE = {}
 
-    def __init__(self, model_name, device_map, torch_dtype, scaler_path):
+    def __init__(self, model_name, device_map, max_memory, torch_dtype, scaler_path):
         super().__init__("Chronos-2 Zero-Shot")
         self.model_name = model_name
         self.device_map = device_map
+        self.max_memory = max_memory
         self.torch_dtype = torch_dtype
         self.scaler_path = Path(scaler_path)
 
@@ -54,6 +55,7 @@ class Chronos2ZeroShotModel(BaselineModel):
                 self.model_name,
                 device_map=self.device_map,
                 dtype=getattr(torch, self.torch_dtype),
+                max_memory=self.max_memory,
             )
         return self._PIPELINE_CACHE[cache_key]
 

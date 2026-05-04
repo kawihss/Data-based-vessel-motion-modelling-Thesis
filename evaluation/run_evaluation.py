@@ -36,6 +36,7 @@ CHRONOS2_CFG = CONFIG["models"].get("chronos2", {})
 CHRONOS2_MODEL_NAME = str(CHRONOS2_CFG.get("model_name", "amazon/chronos-2"))
 CHRONOS2_DEVICE_MAP = CHRONOS2_CFG.get("device_map", None)
 CHRONOS2_DEVICE_MAP = None if CHRONOS2_DEVICE_MAP is None else (str(CHRONOS2_DEVICE_MAP).strip() or None)
+CHRONOS2_MAX_MEMORY = CHRONOS2_CFG.get("max_memory", None)
 CHRONOS2_TORCH_DTYPE = CHRONOS2_CFG.get("torch_dtype", None)
 CHRONOS2_TORCH_DTYPE = None if CHRONOS2_TORCH_DTYPE is None else (str(CHRONOS2_TORCH_DTYPE).strip() or None)
 CHRONOS2_SCALER_PATH = CHRONOS2_CFG.get("scaler_path", "output/05_normalized/scalers.pkl")
@@ -227,6 +228,7 @@ if __name__ == "__main__":
         chronos2_kwargs = {
             "model_name": CHRONOS2_MODEL_NAME,
             "device_map": CHRONOS2_DEVICE_MAP,
+            "max_memory": CHRONOS2_MAX_MEMORY,
             "torch_dtype": CHRONOS2_TORCH_DTYPE,
             "scaler_path": str(PROJECT_ROOT / CHRONOS2_SCALER_PATH),
         }
