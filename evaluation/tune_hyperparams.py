@@ -37,6 +37,7 @@ TIREX_DEVICE = TIREX_CFG.get("device", None)
 TIREX_DEVICE = None if TIREX_DEVICE is None else (str(TIREX_DEVICE).strip() or None)
 TIREX_BACKEND = str(TIREX_CFG.get("backend", "torch"))
 TIREX_COMPILE_MODEL = bool(TIREX_CFG.get("compile_model", False))
+TIREX_BATCH_SIZE = int(TIREX_CFG.get("batch_size", 1))
 TIREX_SCALER_PATH = TIREX_CFG.get("scaler_path", "output/05_normalized/scalers.pkl")
 TIREX_SCALER_PATH = str(TIREX_SCALER_PATH).strip() if TIREX_SCALER_PATH is not None else "output/05_normalized/scalers.pkl"
 HYBRID_N_TRIALS = int(CONFIG["tuning"]["n_trials_hybrid"])
@@ -509,6 +510,7 @@ if __name__ == "__main__":
                 "device": TIREX_DEVICE,
                 "backend": TIREX_BACKEND,
                 "compile_model": TIREX_COMPILE_MODEL,
+                "batch_size": TIREX_BATCH_SIZE,
                 "scaler_path": str(PROJECT_ROOT / TIREX_SCALER_PATH),
             },
         ))

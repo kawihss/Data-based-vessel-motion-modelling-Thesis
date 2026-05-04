@@ -1,6 +1,6 @@
 run:
-  name: default
-  description: text description of the run
+  name: tirex_channel_channel_100
+  description: running tirex, tuning input length on channel, evaluating on channel
   seed: 42
   sample_pct: 1 #of 100
 
@@ -14,10 +14,9 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: null
-  context_filter_evaluation: null
-  context_filter_tuning: null
-  context_filter_evaluation: null
+  context_filter_tuning: channel
+  context_filter_evaluation: channel
+
 
 evaluation:
   export_predictions: true
@@ -30,12 +29,13 @@ models:
   kalman: false
   ctrv_ekf: false
   tirex_lstm: true
-  chronos2_zero_shot: true
+  chronos2_zero_shot: false
   tirex:
     model_name: NX-AI/TiRex
     device: cuda # null-> auto-detect, or specify "cpu" or "cuda"
     backend: cuda # cuda # torch + GPU as fallback because of compatibility issues 
     compile_model: true
+    batch_size: 256000 # tracks per forecast call; reduce if GPU OOM
     scaler_path: output/05_normalized/scalers.pkl
   chronos2:
     model_name: amazon/chronos-2
@@ -52,7 +52,6 @@ models:
 
 tuning:
   n_trials_standard: 30
-  n_trials_tirex: 1 # just testing if it runs
   n_trials_hybrid: 100
   n_trials_kalman: 100
   n_trials_ctrv_ekf: 100

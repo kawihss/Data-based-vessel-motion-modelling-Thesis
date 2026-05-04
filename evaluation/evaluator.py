@@ -282,28 +282,43 @@ def evaluate_model_cached_numpy(model, cached_tracks):
     all_true = []
     all_pred = []
 
-    for track in cached_tracks:
-        n_pred_steps = track['n_pred_steps']
-        if n_pred_steps <= 0:
-            continue
+    batch_size = getattr(model, 'batch_size', 1)
+    if hasattr(model, 'predict_batch_from_cached_tracks') and batch_size > 1:
+        valid_tracks = [t for t in cached_tracks if t['n_pred_steps'] > 0]
+        for i in range(0, len(valid_tracks), batch_size):
+            batch = valid_tracks[i:i + batch_size]
+            n_pred_steps = batch[0]['n_pred_steps']
+            batch_displacements = model.predict_batch_from_cached_tracks(batch, n_pred_steps)
+            for track, displacements in zip(batch, batch_displacements):
+                pred_positions = reconstruct_positions(track['last_x'], track['last_y'], displacements)
+                true_positions = track['true_xy']
+                if len(pred_positions) != len(true_positions):
+                    continue
+                all_true.append(true_positions)
+                all_pred.append(pred_positions)
+    else:
+        for track in cached_tracks:
+            n_pred_steps = track['n_pred_steps']
+            if n_pred_steps <= 0:
+                continue
 
-        if hasattr(model, 'predict_from_cached_track'):
-            displacements = model.predict_from_cached_track(track, n_pred_steps)
-        else:
-            displacements = model.predict_from_arrays(
-                track['x_ctx'],
-                track['y_ctx'],
-                track['rot_ctx'],
-                n_pred_steps,
-            )
-        pred_positions = reconstruct_positions(track['last_x'], track['last_y'], displacements)
-        true_positions = track['true_xy']
+            if hasattr(model, 'predict_from_cached_track'):
+                displacements = model.predict_from_cached_track(track, n_pred_steps)
+            else:
+                displacements = model.predict_from_arrays(
+                    track['x_ctx'],
+                    track['y_ctx'],
+                    track['rot_ctx'],
+                    n_pred_steps,
+                )
+            pred_positions = reconstruct_positions(track['last_x'], track['last_y'], displacements)
+            true_positions = track['true_xy']
 
-        if len(pred_positions) != len(true_positions):
-            continue
+            if len(pred_positions) != len(true_positions):
+                continue
 
-        all_true.append(true_positions)
-        all_pred.append(pred_positions)
+            all_true.append(true_positions)
+            all_pred.append(pred_positions)
 
     if not all_true:
         return {

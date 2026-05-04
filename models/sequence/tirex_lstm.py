@@ -40,6 +40,7 @@ class TirexLSTMModel(BaselineModel):
         backend="torch",
         compile_model=False,
         scaler_path=None,
+        batch_size=1,
     ):
         super().__init__("TiRexLSTM")
         self.velocity_steps = int(velocity_steps)
@@ -48,6 +49,7 @@ class TirexLSTMModel(BaselineModel):
         self.backend = backend
         self.compile_model = bool(compile_model)
         self.scaler_path = scaler_path
+        self.batch_size = int(batch_size)
 
     def _get_model(self):
    
@@ -130,6 +132,25 @@ class TirexLSTMModel(BaselineModel):
 
         pred_dx, pred_dy = self._denormalize_displacements(pred_norm_dx, pred_norm_dy)
         return np.column_stack([pred_dx, pred_dy])
+
+    def predict_batch_from_cached_tracks(self, tracks, n_pred_steps):
+        model = self._get_model()
+        contexts = []
+        for track in tracks:
+            dx_norm = np.asarray(track["dx_norm_ctx"], dtype=float).reshape(-1)
+            dy_norm = np.asarray(track["dy_norm_ctx"], dtype=float).reshape(-1)
+            window = max(1, min(int(self.velocity_steps), len(dx_norm), len(dy_norm)))
+            contexts.append(dx_norm[-window:].astype(np.float32))
+            contexts.append(dy_norm[-window:].astype(np.float32))
+
+        # one forecast call for all tracks; channels are interleaved → (B*2, n_pred_steps)
+        _, means = model.forecast(context=contexts, output_type="numpy", prediction_length=int(n_pred_steps))
+        means = np.asarray(means, dtype=float)
+
+        return [
+            np.column_stack(self._denormalize_displacements(means[i * 2, :n_pred_steps], means[i * 2 + 1, :n_pred_steps]))
+            for i in range(len(tracks))
+        ]
 
     def predict_from_cached_track(self, track, n_pred_steps):
         return self._predict_from_series(
