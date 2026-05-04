@@ -4,6 +4,8 @@ output*/
 cache/
 .vscode/
 venv/
+backup/
+
 
 #ignore /File types
 *.csv
@@ -16,3 +18,5 @@ __pycache__/
 
 Data # simlink
 output # simlink
+backup
+tune_log.txt

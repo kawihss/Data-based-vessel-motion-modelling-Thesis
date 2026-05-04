@@ -1,6 +1,6 @@
 run:
-  name: baseline_river_river_100
-  description: Running all baselines models on river context tracks, with river context filter for tuning and evaluation.
+  name: default
+  description: text description of the run
   seed: 42
   sample_pct: 100 #of 100
 
@@ -14,8 +14,8 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: river
-  context_filter_evaluation: river
+  context_filter_tuning: null
+  context_filter_evaluation: null
 
 evaluation:
   export_predictions: true

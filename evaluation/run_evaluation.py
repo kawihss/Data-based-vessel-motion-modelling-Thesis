@@ -38,7 +38,7 @@ SAMPLE_PCT = int(CONFIG["run"]["sample_pct"])
 EVALUATION_PCT = int(get_sampling_value(CONFIG, "evaluation_pct"))
 
 np.random.seed(SEED)
-
+print(EVAL_SPLIT)
 
 def _load_tuned_values(diagnostics_dir):
     df = pd.read_csv(diagnostics_dir / "tuning_best_params_val.csv")
