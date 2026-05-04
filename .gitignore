@@ -6,6 +6,7 @@ cache/
 venv/
 backup/
 
+.venv/
 
 #ignore /File types
 *.csv

@@ -16,23 +16,33 @@ data:
   split: test
   context_filter_tuning: null
   context_filter_evaluation: null
+  context_filter_tuning: null
+  context_filter_evaluation: null
 
 evaluation:
   export_predictions: true
 
 models:
   cv: true
-  ctrv: true
-  ctrv_arc: true
-  hybrid: true
-  kalman: true
-  ctrv_ekf: true
+  ctrv: false
+  ctrv_arc: false
+  hybrid: false
+  kalman: false
+  ctrv_ekf: false
   tirex_lstm: false
+  chronos2_zero_shot: true
   tirex:
     model_name: NX-AI/TiRex
     device: cuda # null-> auto-detect, or specify "cpu" or "cuda"
     backend: cuda # torch as fallback for windows, use cuda on linux, recommended and faster
     compile_model: true
+    scaler_path: output/05_normalized/scalers.pkl
+  chronos2:
+    model_name: amazon/chronos-2
+    device_map: cuda
+    torch_dtype: float32
+    context_length: 10
+    prediction_length: 10
     scaler_path: output/05_normalized/scalers.pkl
 
 tuning:
@@ -48,9 +58,10 @@ plotting:
   step_duration_s: 30
   models:
     constant_velocity: true
-    ctrv: true
-    ctrv_arc: true
-    hybrid_cv_ctrv: true
-    kalman: true
+    ctrv: false
+    ctrv_arc: false
+    hybrid_cv_ctrv: false
+    kalman: false
     ctrv_ekf: true
     tirex_lstm: false
+    chronos2_zero_shot: true
