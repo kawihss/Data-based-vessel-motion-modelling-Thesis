@@ -22,6 +22,7 @@ Current runtime data paths:
 - NVIDIA CUDA 8.0 or later for the tirex library
 - RAM: 32+ GB recommended (tested on 48GB+ machines) for caching track data during tuning and evaluation
 - Chronos-2 on Linux currently requires `export HF_HUB_DISABLE_XET=1` before running evaluation or tuning so model downloads work reliably
+- **TiRex CUDA backend:** `xlstm` calls `torch.utils.cpp_extension.include_paths(cuda=True)` which was removed in PyTorch 2.11+. Patch cuda_init.py` replace `include_paths(cuda=True)` with `include_paths()` and hardcode `CUDA_LIB` to your CUDA lib path (e.g. `/usr/local/cuda-12.6/targets/x86_64-linux/lib`). This patch must be reapplied after `pip install --upgrade xlstm`. As a fallback if CUDA kernel compilation fails, set `backend: torch` in `configs/evaluation.yaml` under `models.tirex` to uses PyTorch ops on GPU without custom kernels (3-4 times slower).
 
 
 ## Model Layer
@@ -243,11 +244,17 @@ Evaluation CSVs also carry `sample_pct` so future subsampling runs can be compar
 nvidia-smi -L
 watch -n 1 nvidia-smi
 ```
+or 
+```bash 
+nvitop
+```
+after installing with `pip install nvitop`
 
 **CPU usage monitoring (Python processes):**
 ```bash
 htop -p $(pgrep -d',' -f python)
 ```
+
 
 **Run without crash on logout:**
 

@@ -1,6 +1,11 @@
 import sys
+import os
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9"
+os.environ["CUDA_LIB"] = "/usr/local/cuda-12.6/targets/x86_64-linux/lib"
+os.environ["XLSTM_EXTRA_INCLUDE_PATHS"] = "/usr/local/cuda-12.6/include"
 
 import pandas as pd
 import numpy as np

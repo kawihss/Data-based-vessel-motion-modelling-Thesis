@@ -23,18 +23,18 @@ evaluation:
   export_predictions: true
 
 models:
-  cv: true
+  cv: false
   ctrv: false
   ctrv_arc: false
   hybrid: false
   kalman: false
   ctrv_ekf: false
-  tirex_lstm: false
+  tirex_lstm: true
   chronos2_zero_shot: true
   tirex:
     model_name: NX-AI/TiRex
     device: cuda # null-> auto-detect, or specify "cpu" or "cuda"
-    backend: cuda # torch as fallback for windows, use cuda on linux, recommended and faster
+    backend: cuda # cuda # torch + GPU as fallback because of compatibility issues 
     compile_model: true
     scaler_path: output/05_normalized/scalers.pkl
   chronos2:
@@ -43,9 +43,8 @@ models:
     # Use "cuda" for the first GPU, "cuda:N" for a specific GPU by index, starting at 0,
     # "cpu" to force CPU, or "auto".
     #
-    # max_memory limits how much GPU memory (in GB) is allocated per device (keyed by GPU index).
-    device_map: cuda:1
-    max_memory: {1: "11GB"}
+    device_map: cuda #{0: "cuda:0", 1: "cuda:1"} # use both gpus explicitly
+    max_memory: {0: "8GB", 1: "11GB"}
     torch_dtype: float32
     context_length: 10
     prediction_length: 10
@@ -69,5 +68,5 @@ plotting:
     hybrid_cv_ctrv: false
     kalman: false
     ctrv_ekf: true
-    tirex_lstm: false
+    tirex_lstm: true
     chronos2_zero_shot: true

@@ -7,10 +7,19 @@ import joblib
 
 from models.base_model import BaselineModel
 
+import os
+os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9"
+os.environ["CUDA_LIB"] = "/usr/local/cuda-12.6/targets/x86_64-linux/lib"
+os.environ["XLSTM_EXTRA_INCLUDE_PATHS"] = "/usr/local/cuda-12.6/include"
+
 try:
     from tirex import load_model
 except ImportError:  # pragma: no cover
     load_model = None
+
+import torch
+torch.backends.cudnn.benchmark = True  # 4090
+torch.backends.cudnn.enabled = True    # 4090
 
 
 class TirexLSTMModel(BaselineModel):
@@ -89,12 +98,12 @@ class TirexLSTMModel(BaselineModel):
             output_type="numpy",
             prediction_length=int(n_pred_steps),
         )
-
-        mean_2d = np.asarray(np.squeeze(mean)[0], dtype=float)
-      
-        x_pred = np.asarray(mean_2d[0], dtype=float).reshape(-1)
-        y_pred = np.asarray(mean_2d[1], dtype=float).reshape(-1)
+        squeezed = np.asarray(mean, dtype=float)
+        # mean shape: (2, n_pred_steps)
+        x_pred = squeezed[0]   # dx-Kanal
+        y_pred = squeezed[1]   # dy-Kanal
         return x_pred[:n_pred_steps], y_pred[:n_pred_steps]
+
 
     def _denormalize_displacements(self, pred_norm_dx, pred_norm_dy):
         scaler_params = self._get_dxdy_scaler_params()
