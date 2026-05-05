@@ -68,7 +68,7 @@ Provides trajectory quality metrics:
 - ADE per prediction step
 - MIW from the `[q=0.1, q=0.9]` interval on predicted `dx`/`dy` displacements
 - Coverage of the `[q=0.1, q=0.9]` interval on predicted `dx`/`dy` displacements
-- Additional quantile-derived metrics for Chronos-2: IQR, pinball loss, CRPS approximation, Winkler interval score
+- Additional quantile-derived metrics for Chronos-2: pinball loss, CRPS approximation, Winkler interval score
 
 ### `evaluation/evaluator.py`
 

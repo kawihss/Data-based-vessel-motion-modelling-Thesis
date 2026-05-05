@@ -1,5 +1,5 @@
 run:
-  name: tirex_channel_channel_100
+  name: tirex_crashtest
   description: running tirex, tuning input length on channel, evaluating on channel
   seed: 42
   sample_pct: 1 #of 100
@@ -14,8 +14,8 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: channel
-  context_filter_evaluation: channel
+  context_filter_tuning: river # null, not none
+  context_filter_evaluation: river # null
 
 
 evaluation:

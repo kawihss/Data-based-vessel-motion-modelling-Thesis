@@ -310,15 +310,18 @@ if __name__ == "__main__":
                 last_y = context_df['y'].iloc[-1]
 
                 quantile_predictions = model.predict_quantiles(context_df, n_pred_steps) if hasattr(model, 'predict_quantiles') else None
-                displacements = np.asarray(quantile_predictions[0.5], dtype=float) if quantile_predictions is not None else model.predict(context_df, n_pred_steps)
+                displacements = model.predict(context_df, n_pred_steps)
                 pred_positions = reconstruct_positions(last_x, last_y, displacements)
                 true_positions = pred_df[['x', 'y']].values
-                # Denormalize ground-truth displacements to real metres so they match
-                # the denormalized quantile predictions from Chronos/TiRex.
-                _active_scaler_path = str(PROJECT_ROOT / CHRONOS2_SCALER_PATH)
-                true_displacements = _denormalize_true_displacements(
-                    pred_df['dx_norm'].values, pred_df['dy_norm'].values, _active_scaler_path
-                )
+                true_displacements = None
+                if quantile_predictions is not None:
+                    # Denormalize ground-truth displacements to real metres so they match
+                    # the denormalized quantile predictions from Chronos/TiRex.
+                    scaler_rel_path = TIREX_SCALER_PATH if model_key == "tirex_lstm" else CHRONOS2_SCALER_PATH
+                    _active_scaler_path = str(PROJECT_ROOT / scaler_rel_path)
+                    true_displacements = _denormalize_true_displacements(
+                        pred_df['dx_norm'].values, pred_df['dy_norm'].values, _active_scaler_path
+                    )
                 context_label = str(context_df['context'].iloc[-1])
                 ctx_sorted = context_df.sort_values('t_utc')
 
@@ -408,7 +411,6 @@ if __name__ == "__main__":
             'RMSE': metrics.get('RMSE'),
             'MIW': metrics.get('MIW', np.nan),
             'Coverage': metrics.get('Coverage', np.nan),
-            'IQR': metrics.get('IQR', np.nan),
             'Winkler80': metrics.get('Winkler80', np.nan),
             'n_tracks': metrics.get('n_tracks'),
             'sample_pct': EVALUATION_PCT,

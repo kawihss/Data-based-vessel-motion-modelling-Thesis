@@ -187,10 +187,10 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
             last_y = context_df['y'].iloc[-1]
 
             quantile_predictions = model.predict_quantiles(context_df, n_pred_steps) if hasattr(model, 'predict_quantiles') else None
-            displacements = quantile_predictions[0.5] if quantile_predictions is not None else model.predict(context_df, n_pred_steps)
+            displacements = model.predict(context_df, n_pred_steps)
             pred_positions = reconstruct_positions(last_x, last_y, displacements)
             lower_positions = reconstruct_positions(last_x, last_y, quantile_predictions[0.1]) if quantile_predictions is not None else None
-            median_positions = reconstruct_positions(last_x, last_y, quantile_predictions[0.5]) if quantile_predictions is not None else None
+            median_positions = pred_positions
             upper_positions = reconstruct_positions(last_x, last_y, quantile_predictions[0.9]) if quantile_predictions is not None else None
 
             if len(pred_positions) != n_pred_steps:
@@ -215,16 +215,16 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
                     't_utc_pred': pred_df['t_utc'].iloc[i] if 't_utc' in pred_df else '',
                     'dx_pred_q10': float(quantile_predictions[0.1][i, 0]) if quantile_predictions is not None else '',
                     'dy_pred_q10': float(quantile_predictions[0.1][i, 1]) if quantile_predictions is not None else '',
-                    'dx_pred_q50': float(quantile_predictions[0.5][i, 0]) if quantile_predictions is not None else '',
-                    'dy_pred_q50': float(quantile_predictions[0.5][i, 1]) if quantile_predictions is not None else '',
+                    'dx_pred_q50': float(displacements[i, 0]),
+                    'dy_pred_q50': float(displacements[i, 1]),
                     'dx_pred_q90': float(quantile_predictions[0.9][i, 0]) if quantile_predictions is not None else '',
                     'dy_pred_q90': float(quantile_predictions[0.9][i, 1]) if quantile_predictions is not None else '',
                     'x_pred': float(pred_positions[i, 0]),
                     'y_pred': float(pred_positions[i, 1]),
                     'x_pred_q10': float(lower_positions[i, 0]) if lower_positions is not None else '',
                     'y_pred_q10': float(lower_positions[i, 1]) if lower_positions is not None else '',
-                    'x_pred_q50': float(median_positions[i, 0]) if median_positions is not None else '',
-                    'y_pred_q50': float(median_positions[i, 1]) if median_positions is not None else '',
+                    'x_pred_q50': float(median_positions[i, 0]),
+                    'y_pred_q50': float(median_positions[i, 1]),
                     'x_pred_q90': float(upper_positions[i, 0]) if upper_positions is not None else '',
                     'y_pred_q90': float(upper_positions[i, 1]) if upper_positions is not None else '',
                     'x_gt': float(pred_df['x'].iloc[i]),

@@ -21,6 +21,9 @@ import torch
 torch.backends.cudnn.benchmark = True  # 4090
 torch.backends.cudnn.enabled = True    # 4090
 
+_TIREX_QUANTILES = (0.1, 0.9)
+_TIREX_Q_INDEX = {0.1: 0, 0.9: 8}
+
 
 class TirexLSTMModel(BaselineModel):
     _MODEL_CACHE = {}
@@ -100,10 +103,9 @@ class TirexLSTMModel(BaselineModel):
             output_type="numpy",
             prediction_length=int(n_pred_steps),
         )
-        squeezed = np.asarray(mean, dtype=float)
-        # mean shape: (2, n_pred_steps)
-        x_pred = squeezed[0]   # dx-Kanal
-        y_pred = squeezed[1]   # dy-Kanal
+        mean = np.asarray(mean, dtype=float)
+        x_pred = mean[0, :n_pred_steps]
+        y_pred = mean[1, :n_pred_steps]
         return x_pred[:n_pred_steps], y_pred[:n_pred_steps]
 
 
@@ -132,6 +134,37 @@ class TirexLSTMModel(BaselineModel):
 
         pred_dx, pred_dy = self._denormalize_displacements(pred_norm_dx, pred_norm_dy)
         return np.column_stack([pred_dx, pred_dy])
+
+    def predict_quantiles(self, context_df, n_pred_steps):
+        n_pred_steps = int(n_pred_steps)
+        if n_pred_steps <= 0:
+            return {float(q): np.empty((0, 2), dtype=float) for q in _TIREX_QUANTILES}
+
+        ctx = context_df.sort_values("t_utc") if "t_utc" in context_df.columns else context_df
+        dx_norm = np.asarray(ctx["dx_norm"].values, dtype=float).reshape(-1)
+        dy_norm = np.asarray(ctx["dy_norm"].values, dtype=float).reshape(-1)
+        if dx_norm.size == 0 or dy_norm.size == 0:
+            return {float(q): np.zeros((n_pred_steps, 2), dtype=float) for q in _TIREX_QUANTILES}
+
+        window = max(1, min(int(self.velocity_steps), len(dx_norm), len(dy_norm)))
+        context = np.stack([dx_norm[-window:], dy_norm[-window:]], axis=0).astype(np.float32)
+        model = self._get_model()
+        quantiles, mean = model.forecast(
+            context=context,
+            output_type="numpy",
+            prediction_length=n_pred_steps,
+        )
+
+        quantiles = np.asarray(quantiles, dtype=float)
+
+        result = {}
+        for quantile in _TIREX_QUANTILES:
+            q_idx = _TIREX_Q_INDEX[float(quantile)]
+            dx_series = quantiles[0, :n_pred_steps, q_idx]
+            dy_series = quantiles[1, :n_pred_steps, q_idx]
+            pred_dx, pred_dy = self._denormalize_displacements(dx_series, dy_series)
+            result[float(quantile)] = np.column_stack([pred_dx, pred_dy])
+        return result
 
     def predict_batch_from_cached_tracks(self, tracks, n_pred_steps):
         model = self._get_model()

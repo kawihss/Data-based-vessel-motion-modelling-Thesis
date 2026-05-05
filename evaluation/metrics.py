@@ -59,7 +59,6 @@ def evaluate_quantile_forecast(y_true, y_quantiles):
     return {
         "MIW": calculate_mean_interval_width(y_quantiles, lower_q=0.1, upper_q=0.9),
         "Coverage": calculate_coverage(y_true, y_quantiles, lower_q=0.1, upper_q=0.9),
-        "IQR": calculate_mean_interval_width(y_quantiles, lower_q=0.25, upper_q=0.75),
         "Winkler80": calculate_winkler_score(y_true, y_quantiles, lower_q=0.1, upper_q=0.9),
     }
 
