@@ -1,12 +1,12 @@
 run:
-  name: lstm_test005
-  description: 5 prozent kein filter
+  name: lstm_river_river_
+  description: 100 prozent kein filter
   seed: 42
-  sample_pct: 5 #of 100
+  sample_pct: 100 #of 100
 
 sampling:
-  tuning_validation_pct: 1 #of 100
-  evaluation_pct: 5 #of 100
+  tuning_validation_pct: 100 #of 100
+  evaluation_pct: 100 #of 100
 
 paths:
   baseline_root: output/08_baseline_results

@@ -53,7 +53,7 @@ class MinimalLSTMModel(BaselineModel):
             dropout=float(ckpt["dropout"]),
             pred_len=self.pred_len,
         ).to(self.device)
-        self.model.load_state_dict(ckpt["state_dict"], strict=True)
+        self.model.load_state_dict(self._normalize_state_dict_keys(ckpt["state_dict"]), strict=True)
         self.model.eval()
 
         scalers = joblib.load(Path(scaler_path))
@@ -62,6 +62,20 @@ class MinimalLSTMModel(BaselineModel):
         scales = np.asarray(gs["scale"], dtype=float)
         self.dx_mean, self.dx_scale = float(means[0]), float(scales[0])
         self.dy_mean, self.dy_scale = float(means[1]), float(scales[1])
+
+    @staticmethod
+    def _normalize_state_dict_keys(state_dict):
+        normalized = {}
+        for key, value in state_dict.items():
+            new_key = key
+            # Remove wrappers introduced by torch.compile and DataParallel.
+            while new_key.startswith("_orig_mod.") or new_key.startswith("module."):
+                if new_key.startswith("_orig_mod."):
+                    new_key = new_key[len("_orig_mod."):]
+                elif new_key.startswith("module."):
+                    new_key = new_key[len("module."):]
+            normalized[new_key] = value
+        return normalized
 
     def predict(self, context_df, n_pred_steps):
         if int(n_pred_steps) != self.pred_len:

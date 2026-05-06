@@ -131,6 +131,19 @@ def _run_lstm_training(
     batch_size = int(params["batch_size"])
     device = torch.device(device_str)
 
+    def _plain_state_dict(m):
+        state = m.state_dict()
+        normalized = {}
+        for key, value in state.items():
+            new_key = key
+            while new_key.startswith("_orig_mod.") or new_key.startswith("module."):
+                if new_key.startswith("_orig_mod."):
+                    new_key = new_key[len("_orig_mod."):]
+                elif new_key.startswith("module."):
+                    new_key = new_key[len("module."):]
+            normalized[new_key] = value
+        return normalized
+
     model = MinimalLSTMNet(len(FEATURE_COLUMNS), hidden_size, num_layers, dropout, PRED_LEN).to(device)
     model = torch.compile(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -175,7 +188,7 @@ def _run_lstm_training(
 
         if (best_val_loss - val_loss) > min_delta:
             best_val_loss = val_loss
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            best_state = {k: v.detach().cpu().clone() for k, v in _plain_state_dict(model).items()}
             stale = 0
         else:
             stale += 1
