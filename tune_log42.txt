@@ -1,0 +1,395 @@
+nohup: ignoring input
+Running full grid search over velocity_steps for CV/CTRV/CTRV Arc/TiRex LSTM
+Hybrid search trials: 100 | Kalman: 100 | CTRV EKF: 100
+Run: baseline_river_river_50 | seed=42 | sample_pct=100% | tuning_validation_pct=50%
+Validation tracks are cached once in RAM per model process
+
+Caching numpy tracks from 332 file(s) for split 'val', context(s) river
+Cached 111361 numpy track(s) in memory
+[Grid] Constant Velocity: 1/9 (velocity_steps=1) value=125.750991 best=125.750991
+[Grid] Constant Velocity: 2/9 (velocity_steps=2) value=131.798607 best=125.750991
+[Grid] Constant Velocity: 3/9 (velocity_steps=3) value=139.460209 best=125.750991
+[Grid] Constant Velocity: 4/9 (velocity_steps=4) value=146.925027 best=125.750991
+[Grid] Constant Velocity: 5/9 (velocity_steps=5) value=154.273691 best=125.750991
+[Grid] Constant Velocity: 6/9 (velocity_steps=6) value=161.459840 best=125.750991
+[Grid] Constant Velocity: 7/9 (velocity_steps=7) value=168.485745 best=125.750991
+[Grid] Constant Velocity: 8/9 (velocity_steps=8) value=175.370706 best=125.750991
+[Grid] Constant Velocity: 9/9 (velocity_steps=9) value=182.125710 best=125.750991
+Caching numpy tracks from 332 file(s) for split 'val', context(s) river
+Cached 111361 numpy track(s) in memory
+[Grid] CTRV: 1/9 (velocity_steps=1) value=133.035671 best=133.035671
+[Grid] CTRV: 2/9 (velocity_steps=2) value=127.281924 best=127.281924
+[Grid] CTRV: 3/9 (velocity_steps=3) value=127.693704 best=127.281924
+[Grid] CTRV: 4/9 (velocity_steps=4) value=130.525045 best=127.281924
+[Grid] CTRV: 5/9 (velocity_steps=5) value=134.705534 best=127.281924
+[Grid] CTRV: 6/9 (velocity_steps=6) value=139.700917 best=127.281924
+[Grid] CTRV: 7/9 (velocity_steps=7) value=145.201236 best=127.281924
+[Grid] CTRV: 8/9 (velocity_steps=8) value=151.030001 best=127.281924
+[Grid] CTRV: 9/9 (velocity_steps=9) value=157.025466 best=127.281924
+Caching numpy tracks from 332 file(s) for split 'val', context(s) river
+Cached 111361 numpy track(s) in memory
+[Grid] CTRV Arc: 1/9 (velocity_steps=1) value=139.167391 best=139.167391
+[Grid] CTRV Arc: 2/9 (velocity_steps=2) value=130.993509 best=130.993509
+[Grid] CTRV Arc: 3/9 (velocity_steps=3) value=129.701035 best=129.701035
+[Grid] CTRV Arc: 4/9 (velocity_steps=4) value=131.297488 best=129.701035
+[Grid] CTRV Arc: 5/9 (velocity_steps=5) value=134.567526 best=129.701035
+[Grid] CTRV Arc: 6/9 (velocity_steps=6) value=138.877127 best=129.701035
+[Grid] CTRV Arc: 7/9 (velocity_steps=7) value=143.866535 best=129.701035
+[Grid] CTRV Arc: 8/9 (velocity_steps=8) value=149.309119 best=129.701035
+[Grid] CTRV Arc: 9/9 (velocity_steps=9) value=154.992387 best=129.701035
+Caching numpy tracks from 332 file(s) for split 'val', context(s) river
+Cached 111361 numpy track(s) in memory
+[CTRV EKF] trial 0 slow: 95.7s  RMSE=1056.8545
+[Trial] CTRV EKF: 1/100 (trial #0) value=1056.854491 best=1056.854491
+[CTRV EKF] trial 1 slow: 50.1s  RMSE=129.2306
+[Trial] CTRV EKF: 2/100 (trial #1) value=129.230636 best=129.230636
+[CTRV EKF] trial 2 slow: 67.6s  RMSE=316.5040
+[Trial] CTRV EKF: 3/100 (trial #2) value=316.504005 best=129.230636
+[CTRV EKF] trial 3 slow: 49.3s  RMSE=143.9179
+[Trial] CTRV EKF: 4/100 (trial #3) value=143.917929 best=129.230636
+[CTRV EKF] trial 4 slow: 75.0s  RMSE=1209.4986
+[Trial] CTRV EKF: 5/100 (trial #4) value=1209.498557 best=129.230636
+[CTRV EKF] trial 5 slow: 77.3s  RMSE=233.0042
+[Trial] CTRV EKF: 6/100 (trial #5) value=233.004228 best=129.230636
+[CTRV EKF] trial 6 slow: 102.7s  RMSE=1119.0992
+[Trial] CTRV EKF: 7/100 (trial #6) value=1119.099172 best=129.230636
+[CTRV EKF] trial 7 slow: 60.6s  RMSE=176.2727
+[Trial] CTRV EKF: 8/100 (trial #7) value=176.272711 best=129.230636
+[CTRV EKF] trial 8 slow: 46.5s  RMSE=565.5940
+[Trial] CTRV EKF: 9/100 (trial #8) value=565.594047 best=129.230636
+[CTRV EKF] trial 9 slow: 46.7s  RMSE=181.6133
+[Trial] CTRV EKF: 10/100 (trial #9) value=181.613330 best=129.230636
+[CTRV EKF] trial 10 slow: 81.8s  RMSE=167.8305
+[Trial] CTRV EKF: 11/100 (trial #10) value=167.830487 best=129.230636
+[CTRV EKF] trial 11 slow: 67.7s  RMSE=162.1587
+[Trial] CTRV EKF: 12/100 (trial #11) value=162.158722 best=129.230636
+[CTRV EKF] trial 12 slow: 75.2s  RMSE=152.1780
+[Trial] CTRV EKF: 13/100 (trial #12) value=152.178003 best=129.230636
+[CTRV EKF] trial 13 slow: 46.7s  RMSE=130.2350
+[Trial] CTRV EKF: 14/100 (trial #13) value=130.235021 best=129.230636
+[CTRV EKF] trial 14 slow: 79.0s  RMSE=306.8953
+[Trial] CTRV EKF: 15/100 (trial #14) value=306.895321 best=129.230636
+[CTRV EKF] trial 15 slow: 104.5s  RMSE=140.5353
+[Trial] CTRV EKF: 16/100 (trial #15) value=140.535312 best=129.230636
+[CTRV EKF] trial 16 slow: 60.6s  RMSE=293.5726
+[Trial] CTRV EKF: 17/100 (trial #16) value=293.572647 best=129.230636
+[CTRV EKF] trial 17 slow: 60.7s  RMSE=140.8064
+[Trial] CTRV EKF: 18/100 (trial #17) value=140.806360 best=129.230636
+[CTRV EKF] trial 18 slow: 56.1s  RMSE=943.7216
+[Trial] CTRV EKF: 19/100 (trial #18) value=943.721642 best=129.230636
+[CTRV EKF] trial 19 slow: 87.7s  RMSE=1219.7165
+[Trial] CTRV EKF: 20/100 (trial #19) value=1219.716500 best=129.230636
+[CTRV EKF] trial 20 slow: 37.5s  RMSE=125.7417
+[Trial] CTRV EKF: 21/100 (trial #20) value=125.741692 best=125.741692
+[CTRV EKF] trial 21 slow: 37.5s  RMSE=125.7426
+[Trial] CTRV EKF: 22/100 (trial #21) value=125.742622 best=125.741692
+[CTRV EKF] trial 22 slow: 37.5s  RMSE=125.7415
+[Trial] CTRV EKF: 23/100 (trial #22) value=125.741467 best=125.741467
+[CTRV EKF] trial 23 slow: 37.5s  RMSE=125.7423
+[Trial] CTRV EKF: 24/100 (trial #23) value=125.742253 best=125.741467
+[CTRV EKF] trial 24 slow: 37.7s  RMSE=125.5711
+[Trial] CTRV EKF: 25/100 (trial #24) value=125.571128 best=125.571128
+[CTRV EKF] trial 25 slow: 38.0s  RMSE=562.2553
+[Trial] CTRV EKF: 26/100 (trial #25) value=562.255306 best=125.571128
+[CTRV EKF] trial 26 slow: 54.3s  RMSE=125.4647
+[Trial] CTRV EKF: 27/100 (trial #26) value=125.464741 best=125.464741
+[CTRV EKF] trial 27 slow: 53.7s  RMSE=127.3731
+[Trial] CTRV EKF: 28/100 (trial #27) value=127.373063 best=125.464741
+[CTRV EKF] trial 28 slow: 54.5s  RMSE=600.3244
+[Trial] CTRV EKF: 29/100 (trial #28) value=600.324410 best=125.464741
+[CTRV EKF] trial 29 slow: 53.9s  RMSE=200.9546
+[Trial] CTRV EKF: 30/100 (trial #29) value=200.954606 best=125.464741
+[CTRV EKF] trial 30 slow: 38.7s  RMSE=125.6972
+[Trial] CTRV EKF: 31/100 (trial #30) value=125.697182 best=125.464741
+[CTRV EKF] trial 31 slow: 39.2s  RMSE=125.7001
+[Trial] CTRV EKF: 32/100 (trial #31) value=125.700119 best=125.464741
+[CTRV EKF] trial 32 slow: 37.2s  RMSE=125.5618
+[Trial] CTRV EKF: 33/100 (trial #32) value=125.561844 best=125.464741
+[CTRV EKF] trial 33 slow: 49.8s  RMSE=171.3608
+[Trial] CTRV EKF: 34/100 (trial #33) value=171.360829 best=125.464741
+[CTRV EKF] trial 34 slow: 48.2s  RMSE=170.1633
+[Trial] CTRV EKF: 35/100 (trial #34) value=170.163269 best=125.464741
+[CTRV EKF] trial 35 slow: 53.9s  RMSE=341.2916
+[Trial] CTRV EKF: 36/100 (trial #35) value=341.291551 best=125.464741
+[CTRV EKF] trial 36 slow: 37.6s  RMSE=164.4000
+[Trial] CTRV EKF: 37/100 (trial #36) value=164.400028 best=125.464741
+[CTRV EKF] trial 37 slow: 46.7s  RMSE=169.5018
+[Trial] CTRV EKF: 38/100 (trial #37) value=169.501777 best=125.464741
+[CTRV EKF] trial 38 slow: 37.6s  RMSE=125.3062
+[Trial] CTRV EKF: 39/100 (trial #38) value=125.306242 best=125.306242
+[CTRV EKF] trial 39 slow: 61.1s  RMSE=313.9398
+[Trial] CTRV EKF: 40/100 (trial #39) value=313.939768 best=125.306242
+[CTRV EKF] trial 40 slow: 46.3s  RMSE=134.4810
+[Trial] CTRV EKF: 41/100 (trial #40) value=134.480999 best=125.306242
+[CTRV EKF] trial 41 slow: 37.7s  RMSE=125.6368
+[Trial] CTRV EKF: 42/100 (trial #41) value=125.636760 best=125.306242
+[CTRV EKF] trial 42 slow: 46.6s  RMSE=168.5776
+[Trial] CTRV EKF: 43/100 (trial #42) value=168.577604 best=125.306242
+[CTRV EKF] trial 43 slow: 37.5s  RMSE=128.9600
+[Trial] CTRV EKF: 44/100 (trial #43) value=128.960025 best=125.306242
+[CTRV EKF] trial 44 slow: 56.6s  RMSE=282.8439
+[Trial] CTRV EKF: 45/100 (trial #44) value=282.843878 best=125.306242
+[CTRV EKF] trial 45 slow: 39.4s  RMSE=125.6799
+[Trial] CTRV EKF: 46/100 (trial #45) value=125.679928 best=125.306242
+[CTRV EKF] trial 46 slow: 46.7s  RMSE=135.7617
+[Trial] CTRV EKF: 47/100 (trial #46) value=135.761662 best=125.306242
+[CTRV EKF] trial 47 slow: 68.9s  RMSE=134.0355
+[Trial] CTRV EKF: 48/100 (trial #47) value=134.035461 best=125.306242
+[CTRV EKF] trial 48 slow: 49.0s  RMSE=125.3159
+[Trial] CTRV EKF: 49/100 (trial #48) value=125.315941 best=125.306242
+[CTRV EKF] trial 49 slow: 52.1s  RMSE=124.1023
+[Trial] CTRV EKF: 50/100 (trial #49) value=124.102306 best=124.102306
+[CTRV EKF] trial 50 slow: 61.6s  RMSE=159.6114
+[Trial] CTRV EKF: 51/100 (trial #50) value=159.611392 best=124.102306
+[CTRV EKF] trial 51 slow: 46.7s  RMSE=124.1421
+[Trial] CTRV EKF: 52/100 (trial #51) value=124.142149 best=124.102306
+[CTRV EKF] trial 52 slow: 46.2s  RMSE=122.1392
+[Trial] CTRV EKF: 53/100 (trial #52) value=122.139216 best=122.139216
+[CTRV EKF] trial 53 slow: 53.8s  RMSE=180.5498
+[Trial] CTRV EKF: 54/100 (trial #53) value=180.549839 best=122.139216
+[CTRV EKF] trial 54 slow: 48.9s  RMSE=123.6196
+[Trial] CTRV EKF: 55/100 (trial #54) value=123.619609 best=122.139216
+[CTRV EKF] trial 55 slow: 51.5s  RMSE=124.1944
+[Trial] CTRV EKF: 56/100 (trial #55) value=124.194381 best=122.139216
+[CTRV EKF] trial 56 slow: 108.6s  RMSE=132.1435
+[Trial] CTRV EKF: 57/100 (trial #56) value=132.143454 best=122.139216
+[CTRV EKF] trial 57 slow: 46.9s  RMSE=123.8765
+[Trial] CTRV EKF: 58/100 (trial #57) value=123.876501 best=122.139216
+[CTRV EKF] trial 58 slow: 82.2s  RMSE=160.7796
+[Trial] CTRV EKF: 59/100 (trial #58) value=160.779567 best=122.139216
+[CTRV EKF] trial 59 slow: 46.5s  RMSE=123.1475
+[Trial] CTRV EKF: 60/100 (trial #59) value=123.147522 best=122.139216
+[CTRV EKF] trial 60 slow: 61.0s  RMSE=155.1007
+[Trial] CTRV EKF: 61/100 (trial #60) value=155.100659 best=122.139216
+[CTRV EKF] trial 61 slow: 49.2s  RMSE=124.5407
+[Trial] CTRV EKF: 62/100 (trial #61) value=124.540719 best=122.139216
+[CTRV EKF] trial 62 slow: 53.7s  RMSE=188.5244
+[Trial] CTRV EKF: 63/100 (trial #62) value=188.524441 best=122.139216
+[CTRV EKF] trial 63 slow: 49.1s  RMSE=124.2165
+[Trial] CTRV EKF: 64/100 (trial #63) value=124.216532 best=122.139216
+[CTRV EKF] trial 64 slow: 48.6s  RMSE=124.9604
+[Trial] CTRV EKF: 65/100 (trial #64) value=124.960390 best=122.139216
+[CTRV EKF] trial 65 slow: 55.1s  RMSE=194.5424
+[Trial] CTRV EKF: 66/100 (trial #65) value=194.542433 best=122.139216
+[CTRV EKF] trial 66 slow: 46.2s  RMSE=124.0102
+[Trial] CTRV EKF: 67/100 (trial #66) value=124.010236 best=122.139216
+[CTRV EKF] trial 67 slow: 101.3s  RMSE=237.4587
+[Trial] CTRV EKF: 68/100 (trial #67) value=237.458668 best=122.139216
+[CTRV EKF] trial 68 slow: 53.9s  RMSE=176.5541
+[Trial] CTRV EKF: 69/100 (trial #68) value=176.554120 best=122.139216
+Caching numpy tracks from 332 file(s) for split 'val', context(s) river
+Cached 111361 numpy track(s) in memory
+[Trial] Kalman: 1/100 (trial #0) value=125.761387 best=125.761387
+[Trial] Kalman: 2/100 (trial #1) value=208.557621 best=125.761387
+[Trial] Kalman: 3/100 (trial #2) value=125.839090 best=125.761387
+[Trial] Kalman: 4/100 (trial #3) value=148.478122 best=125.761387
+[Trial] Kalman: 5/100 (trial #4) value=180.406362 best=125.761387
+[Trial] Kalman: 6/100 (trial #5) value=141.890253 best=125.761387
+[Trial] Kalman: 7/100 (trial #6) value=172.544827 best=125.761387
+[Trial] Kalman: 8/100 (trial #7) value=174.093758 best=125.761387
+[Trial] Kalman: 9/100 (trial #8) value=125.751041 best=125.751041
+[Trial] Kalman: 10/100 (trial #9) value=156.374505 best=125.751041
+[Trial] Kalman: 11/100 (trial #10) value=139.983424 best=125.751041
+[Trial] Kalman: 12/100 (trial #11) value=150.065935 best=125.751041
+[Trial] Kalman: 13/100 (trial #12) value=209.916375 best=125.751041
+[Trial] Kalman: 14/100 (trial #13) value=222.909073 best=125.751041
+[Trial] Kalman: 15/100 (trial #14) value=179.954473 best=125.751041
+[Trial] Kalman: 16/100 (trial #15) value=125.987397 best=125.751041
+[Trial] Kalman: 17/100 (trial #16) value=139.601010 best=125.751041
+[Trial] Kalman: 18/100 (trial #17) value=126.304488 best=125.751041
+[Trial] Kalman: 19/100 (trial #18) value=129.316361 best=125.751041
+[Trial] Kalman: 20/100 (trial #19) value=127.224977 best=125.751041
+[Trial] Kalman: 21/100 (trial #20) value=125.748900 best=125.748900
+[Trial] Kalman: 22/100 (trial #21) value=125.748907 best=125.748900
+[Trial] Kalman: 23/100 (trial #22) value=125.759784 best=125.748900
+[Trial] Kalman: 24/100 (trial #23) value=143.344404 best=125.748900
+[Trial] Kalman: 25/100 (trial #24) value=131.261848 best=125.748900
+[Trial] Kalman: 26/100 (trial #25) value=128.332100 best=125.748900
+[Trial] Kalman: 27/100 (trial #26) value=133.248089 best=125.748900
+[Trial] Kalman: 28/100 (trial #27) value=125.749785 best=125.748900
+[Trial] Kalman: 29/100 (trial #28) value=125.749712 best=125.748900
+[Trial] Kalman: 30/100 (trial #29) value=125.813635 best=125.748900
+[Trial] Kalman: 31/100 (trial #30) value=125.750572 best=125.748900
+[Trial] Kalman: 32/100 (trial #31) value=125.749801 best=125.748900
+[Trial] Kalman: 33/100 (trial #32) value=125.763716 best=125.748900
+[Trial] Kalman: 34/100 (trial #33) value=125.749812 best=125.748900
+[Trial] Kalman: 35/100 (trial #34) value=125.755597 best=125.748900
+[Trial] Kalman: 36/100 (trial #35) value=128.885519 best=125.748900
+[Trial] Kalman: 37/100 (trial #36) value=125.788205 best=125.748900
+[Trial] Kalman: 38/100 (trial #37) value=179.550864 best=125.748900
+[Trial] Kalman: 39/100 (trial #38) value=125.751094 best=125.748900
+[Trial] Kalman: 40/100 (trial #39) value=125.753306 best=125.748900
+[Trial] Kalman: 41/100 (trial #40) value=128.459046 best=125.748900
+[Trial] Kalman: 42/100 (trial #41) value=125.749616 best=125.748900
+[Trial] Kalman: 43/100 (trial #42) value=125.750546 best=125.748900
+[Trial] Kalman: 44/100 (trial #43) value=125.749462 best=125.748900
+[Trial] Kalman: 45/100 (trial #44) value=125.749089 best=125.748900
+[Trial] Kalman: 46/100 (trial #45) value=125.749131 best=125.748900
+[Trial] Kalman: 47/100 (trial #46) value=125.749271 best=125.748900
+[Trial] Kalman: 48/100 (trial #47) value=125.759866 best=125.748900
+[Trial] Kalman: 49/100 (trial #48) value=125.750805 best=125.748900
+[Trial] Kalman: 50/100 (trial #49) value=125.749347 best=125.748900
+[Trial] Kalman: 51/100 (trial #50) value=125.750094 best=125.748900
+[Trial] Kalman: 52/100 (trial #51) value=125.749526 best=125.748900
+[Trial] Kalman: 53/100 (trial #52) value=125.750853 best=125.748900
+[Trial] Kalman: 54/100 (trial #53) value=125.750677 best=125.748900
+[Trial] Kalman: 55/100 (trial #54) value=125.749101 best=125.748900
+[Trial] Kalman: 56/100 (trial #55) value=125.749088 best=125.748900
+[Trial] Kalman: 57/100 (trial #56) value=125.749604 best=125.748900
+[Trial] Kalman: 58/100 (trial #57) value=125.959910 best=125.748900
+[Trial] Kalman: 59/100 (trial #58) value=125.785710 best=125.748900
+[Trial] Kalman: 60/100 (trial #59) value=163.135761 best=125.748900
+[Trial] Kalman: 61/100 (trial #60) value=125.755584 best=125.748900
+[Trial] Kalman: 62/100 (trial #61) value=125.749369 best=125.748900
+[Trial] Kalman: 63/100 (trial #62) value=125.749617 best=125.748900
+[Trial] Kalman: 64/100 (trial #63) value=125.749147 best=125.748900
+[Trial] Kalman: 65/100 (trial #64) value=125.792616 best=125.748900
+[Trial] Kalman: 66/100 (trial #65) value=125.748913 best=125.748900
+[Trial] Kalman: 67/100 (trial #66) value=126.526052 best=125.748900
+[Trial] Kalman: 68/100 (trial #67) value=125.752886 best=125.748900
+[Trial] Kalman: 69/100 (trial #68) value=125.809911 best=125.748900
+[Trial] Kalman: 70/100 (trial #69) value=125.963248 best=125.748900
+[Trial] Kalman: 71/100 (trial #70) value=132.665884 best=125.748900
+[CTRV EKF] trial 69 slow: 46.4s  RMSE=124.1681
+[Trial] CTRV EKF: 70/100 (trial #69) value=124.168123 best=122.139216
+[CTRV EKF] trial 70 slow: 61.0s  RMSE=123.8341
+[Trial] CTRV EKF: 71/100 (trial #70) value=123.834091 best=122.139216
+[CTRV EKF] trial 71 slow: 61.8s  RMSE=123.4918
+[Trial] CTRV EKF: 72/100 (trial #71) value=123.491753 best=122.139216
+[CTRV EKF] trial 72 slow: 74.7s  RMSE=136.3179
+[Trial] CTRV EKF: 73/100 (trial #72) value=136.317936 best=122.139216
+[CTRV EKF] trial 73 slow: 61.6s  RMSE=181.0631
+[Trial] CTRV EKF: 74/100 (trial #73) value=181.063093 best=122.139216
+[CTRV EKF] trial 74 slow: 76.6s  RMSE=145.7036
+[Trial] CTRV EKF: 75/100 (trial #74) value=145.703577 best=122.139216
+[CTRV EKF] trial 75 slow: 61.3s  RMSE=123.4420
+[Trial] CTRV EKF: 76/100 (trial #75) value=123.442013 best=122.139216
+[CTRV EKF] trial 76 slow: 72.0s  RMSE=122.2264
+[Trial] CTRV EKF: 77/100 (trial #76) value=122.226412 best=122.139216
+[CTRV EKF] trial 77 slow: 70.9s  RMSE=120.7437
+[Trial] CTRV EKF: 78/100 (trial #77) value=120.743664 best=120.743664
+[CTRV EKF] trial 78 slow: 68.6s  RMSE=121.1180
+[Trial] CTRV EKF: 79/100 (trial #78) value=121.118024 best=120.743664
+[CTRV EKF] trial 79 slow: 69.0s  RMSE=121.3295
+[Trial] CTRV EKF: 80/100 (trial #79) value=121.329540 best=120.743664
+[CTRV EKF] trial 80 slow: 76.1s  RMSE=122.3930
+[Trial] CTRV EKF: 81/100 (trial #80) value=122.392988 best=120.743664
+[CTRV EKF] trial 81 slow: 75.0s  RMSE=122.4683
+[Trial] CTRV EKF: 82/100 (trial #81) value=122.468285 best=120.743664
+[CTRV EKF] trial 82 slow: 71.8s  RMSE=121.4064
+[Trial] CTRV EKF: 83/100 (trial #82) value=121.406365 best=120.743664
+[CTRV EKF] trial 83 slow: 71.8s  RMSE=121.2865
+[Trial] CTRV EKF: 84/100 (trial #83) value=121.286503 best=120.743664
+[CTRV EKF] trial 84 slow: 82.2s  RMSE=123.0283
+[Trial] CTRV EKF: 85/100 (trial #84) value=123.028325 best=120.743664
+[CTRV EKF] trial 85 slow: 75.8s  RMSE=135.8748
+[Trial] CTRV EKF: 86/100 (trial #85) value=135.874808 best=120.743664
+[CTRV EKF] trial 86 slow: 68.7s  RMSE=133.6156
+[Trial] CTRV EKF: 87/100 (trial #86) value=133.615647 best=120.743664
+[CTRV EKF] trial 87 slow: 68.4s  RMSE=130.4607
+[Trial] CTRV EKF: 88/100 (trial #87) value=130.460707 best=120.743664
+[CTRV EKF] trial 88 slow: 75.3s  RMSE=123.8277
+[Trial] CTRV EKF: 89/100 (trial #88) value=123.827685 best=120.743664
+[CTRV EKF] trial 89 slow: 69.1s  RMSE=124.5612
+[Trial] CTRV EKF: 90/100 (trial #89) value=124.561207 best=120.743664
+[CTRV EKF] trial 90 slow: 85.3s  RMSE=121.5264
+[Trial] CTRV EKF: 91/100 (trial #90) value=121.526407 best=120.743664
+[CTRV EKF] trial 91 slow: 82.5s  RMSE=120.4886
+[Trial] CTRV EKF: 92/100 (trial #91) value=120.488596 best=120.488596
+[CTRV EKF] trial 92 slow: 94.0s  RMSE=122.4047
+[Trial] CTRV EKF: 93/100 (trial #92) value=122.404689 best=120.488596
+[CTRV EKF] trial 93 slow: 87.0s  RMSE=121.2768
+[Trial] CTRV EKF: 94/100 (trial #93) value=121.276751 best=120.488596
+[CTRV EKF] trial 94 slow: 82.1s  RMSE=121.1022
+[Trial] CTRV EKF: 95/100 (trial #94) value=121.102188 best=120.488596
+[CTRV EKF] trial 95 slow: 89.5s  RMSE=121.8262
+[Trial] CTRV EKF: 96/100 (trial #95) value=121.826208 best=120.488596
+[CTRV EKF] trial 96 slow: 82.2s  RMSE=124.4511
+[Trial] CTRV EKF: 97/100 (trial #96) value=124.451079 best=120.488596
+[CTRV EKF] trial 97 slow: 97.2s  RMSE=121.3508
+[Trial] CTRV EKF: 98/100 (trial #97) value=121.350816 best=120.488596
+[CTRV EKF] trial 98 slow: 82.3s  RMSE=121.7297
+[Trial] CTRV EKF: 99/100 (trial #98) value=121.729706 best=120.488596
+[CTRV EKF] trial 99 slow: 90.9s  RMSE=123.3664
+[Trial] CTRV EKF: 100/100 (trial #99) value=123.366429 best=120.488596
+[Progress] 1/6 steps completed (Constant Velocity)
+[Progress] 2/6 steps completed (CTRV)
+[Progress] 3/6 steps completed (CTRV Arc)
+[Progress] 4/6 steps completed (Kalman)
+[Progress] 5/6 steps completed (CTRV EKF)
+
+Best-parameter summary saved to /home/dustin_klein/motion-models/output/08_baseline_results/runs/baseline_river_river_50/tuning/tuning_best_params_val.csv
+Caching numpy tracks from 332 file(s) for split 'val', context(s) river
+Cached 111361 numpy track(s) in memory
+[Trial] Hybrid CV/CTRV: 1/100 (trial #0) value=127.748393 best=127.748393
+[Trial] Hybrid CV/CTRV: 2/100 (trial #1) value=146.942957 best=127.748393
+[Trial] Hybrid CV/CTRV: 3/100 (trial #2) value=131.348809 best=127.748393
+[Trial] Hybrid CV/CTRV: 4/100 (trial #3) value=161.423067 best=127.748393
+[Trial] Hybrid CV/CTRV: 5/100 (trial #4) value=169.240234 best=127.748393
+[Trial] Hybrid CV/CTRV: 6/100 (trial #5) value=139.892595 best=127.748393
+[Trial] Hybrid CV/CTRV: 7/100 (trial #6) value=158.968685 best=127.748393
+[Trial] Hybrid CV/CTRV: 8/100 (trial #7) value=154.116602 best=127.748393
+[Trial] Hybrid CV/CTRV: 9/100 (trial #8) value=156.976325 best=127.748393
+[Trial] Hybrid CV/CTRV: 10/100 (trial #9) value=125.750991 best=125.750991
+[Trial] Hybrid CV/CTRV: 11/100 (trial #10) value=139.560705 best=125.750991
+[Trial] Hybrid CV/CTRV: 12/100 (trial #11) value=131.810147 best=125.750991
+[Trial] Hybrid CV/CTRV: 13/100 (trial #12) value=139.480073 best=125.750991
+[Trial] Hybrid CV/CTRV: 14/100 (trial #13) value=154.273691 best=125.750991
+[Trial] Hybrid CV/CTRV: 15/100 (trial #14) value=182.125710 best=125.750991
+[Trial] Hybrid CV/CTRV: 16/100 (trial #15) value=125.631353 best=125.631353
+[Trial] Hybrid CV/CTRV: 17/100 (trial #16) value=146.958491 best=125.631353
+[Trial] Hybrid CV/CTRV: 18/100 (trial #17) value=139.389971 best=125.631353
+[Trial] Hybrid CV/CTRV: 19/100 (trial #18) value=133.094969 best=125.631353
+[Trial] Hybrid CV/CTRV: 20/100 (trial #19) value=125.758012 best=125.631353
+[Trial] Hybrid CV/CTRV: 21/100 (trial #20) value=131.847669 best=125.631353
+[Trial] Hybrid CV/CTRV: 22/100 (trial #21) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 23/100 (trial #22) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 24/100 (trial #23) value=131.810764 best=125.631353
+[Trial] Hybrid CV/CTRV: 25/100 (trial #24) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 26/100 (trial #25) value=131.798607 best=125.631353
+[Trial] Hybrid CV/CTRV: 27/100 (trial #26) value=146.925027 best=125.631353
+[Trial] Hybrid CV/CTRV: 28/100 (trial #27) value=126.954181 best=125.631353
+[Trial] Hybrid CV/CTRV: 29/100 (trial #28) value=142.905743 best=125.631353
+[Trial] Hybrid CV/CTRV: 30/100 (trial #29) value=131.801258 best=125.631353
+[Trial] Hybrid CV/CTRV: 31/100 (trial #30) value=167.190451 best=125.631353
+[Trial] Hybrid CV/CTRV: 32/100 (trial #31) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 33/100 (trial #32) value=125.766730 best=125.631353
+[Trial] Hybrid CV/CTRV: 34/100 (trial #33) value=131.805756 best=125.631353
+[Trial] Hybrid CV/CTRV: 35/100 (trial #34) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 36/100 (trial #35) value=139.460209 best=125.631353
+[Trial] Hybrid CV/CTRV: 37/100 (trial #36) value=131.827379 best=125.631353
+[Trial] Hybrid CV/CTRV: 38/100 (trial #37) value=147.446021 best=125.631353
+[Trial] Hybrid CV/CTRV: 39/100 (trial #38) value=125.862123 best=125.631353
+[Trial] Hybrid CV/CTRV: 40/100 (trial #39) value=132.462400 best=125.631353
+[Trial] Hybrid CV/CTRV: 41/100 (trial #40) value=168.334166 best=125.631353
+[Trial] Hybrid CV/CTRV: 42/100 (trial #41) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 43/100 (trial #42) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 44/100 (trial #43) value=131.798607 best=125.631353
+[Trial] Hybrid CV/CTRV: 45/100 (trial #44) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 46/100 (trial #45) value=139.460209 best=125.631353
+[Trial] Hybrid CV/CTRV: 47/100 (trial #46) value=131.863569 best=125.631353
+[Trial] Hybrid CV/CTRV: 48/100 (trial #47) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 49/100 (trial #48) value=180.829335 best=125.631353
+[Trial] Hybrid CV/CTRV: 50/100 (trial #49) value=139.460209 best=125.631353
+[Trial] Hybrid CV/CTRV: 51/100 (trial #50) value=131.826891 best=125.631353
+[Trial] Hybrid CV/CTRV: 52/100 (trial #51) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 53/100 (trial #52) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 54/100 (trial #53) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 55/100 (trial #54) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 56/100 (trial #55) value=131.805967 best=125.631353
+[Trial] Hybrid CV/CTRV: 57/100 (trial #56) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 58/100 (trial #57) value=135.062591 best=125.631353
+[Trial] Hybrid CV/CTRV: 59/100 (trial #58) value=146.926166 best=125.631353
+[Trial] Hybrid CV/CTRV: 60/100 (trial #59) value=126.450242 best=125.631353
+[Trial] Hybrid CV/CTRV: 61/100 (trial #60) value=150.154163 best=125.631353
+[Trial] Hybrid CV/CTRV: 62/100 (trial #61) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 63/100 (trial #62) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 64/100 (trial #63) value=131.804658 best=125.631353
+[Trial] Hybrid CV/CTRV: 65/100 (trial #64) value=125.750991 best=125.631353
+[Trial] Hybrid CV/CTRV: 66/100 (trial #65) value=131.809315 best=125.631353
+[Progress] 6/6 steps completed (Hybrid CV/CTRV)
+
+Best-parameter summary saved to /home/dustin_klein/motion-models/output/08_baseline_results/runs/baseline_river_river_50/tuning/tuning_best_params_val.csv
+All trials table saved to /home/dustin_klein/motion-models/output/08_baseline_results/runs/baseline_river_river_50/tuning/tuning_all_trials_val.csv
+
+Next step: use the saved best parameters for the final test evaluation.

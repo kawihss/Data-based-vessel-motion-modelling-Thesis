@@ -1,6 +1,11 @@
 import sys
+import os
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9"
+os.environ["CUDA_LIB"] = "/usr/local/cuda-12.6/targets/x86_64-linux/lib"
+os.environ["XLSTM_EXTRA_INCLUDE_PATHS"] = "/usr/local/cuda-12.6/include"
 
 import pandas as pd
 import numpy as np
@@ -11,6 +16,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, ConstantTurnRateVelocityArcModel, HybridCVCTRVModel
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
+from models.sequence import TirexLSTMModel
 from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths, update_latest_run_pointer, write_run_metadata, get_sampling_value
 
@@ -24,7 +30,16 @@ RUN_CTRV_ARC = bool(CONFIG["models"]["ctrv_arc"])
 RUN_HYBRID = bool(CONFIG["models"]["hybrid"])
 RUN_KALMAN = bool(CONFIG["models"]["kalman"])
 RUN_CTRV_EKF = bool(CONFIG["models"]["ctrv_ekf"])
-N_TRIALS = int(CONFIG["tuning"]["n_trials_standard"])
+RUN_TIREX_LSTM = bool(CONFIG["models"]["tirex_lstm"])
+TIREX_CFG = CONFIG["models"].get("tirex", {})
+TIREX_MODEL_NAME = str(TIREX_CFG.get("model_name", "NX-AI/TiRex"))
+TIREX_DEVICE = TIREX_CFG.get("device", None)
+TIREX_DEVICE = None if TIREX_DEVICE is None else (str(TIREX_DEVICE).strip() or None)
+TIREX_BACKEND = str(TIREX_CFG.get("backend", "torch"))
+TIREX_COMPILE_MODEL = bool(TIREX_CFG.get("compile_model", False))
+TIREX_BATCH_SIZE = int(TIREX_CFG.get("batch_size", 1))
+TIREX_SCALER_PATH = TIREX_CFG.get("scaler_path", "output/05_normalized/scalers.pkl")
+TIREX_SCALER_PATH = str(TIREX_SCALER_PATH).strip() if TIREX_SCALER_PATH is not None else "output/05_normalized/scalers.pkl"
 HYBRID_N_TRIALS = int(CONFIG["tuning"]["n_trials_hybrid"])
 KALMAN_N_TRIALS = int(CONFIG["tuning"]["n_trials_kalman"])
 CTRV_EKF_N_TRIALS = int(CONFIG["tuning"]["n_trials_ctrv_ekf"])
@@ -35,19 +50,6 @@ SAMPLE_PCT = int(CONFIG["run"]["sample_pct"])
 TUNING_VALIDATION_PCT = int(get_sampling_value(CONFIG, "tuning_validation_pct"))
 
 np.random.seed(SEED)
-
-
-def make_objective(model_cls, cached_tracks, max_velocity_steps):
-    # creates an Optuna objective function for tuning velocity_steps of a given model 
-
-    # use closures to pass the model class and cached tracks to the objective function 
-    # as only 1 argument (trial) is allowed by Optuna
-    def objective(trial):
-        velocity_steps = trial.suggest_int("velocity_steps", 1, max_velocity_steps)
-        model = model_cls(velocity_steps=velocity_steps)
-        metrics = evaluate_model_cached_numpy(model, cached_tracks)
-        return metrics["RMSE"]
-    return objective
 
 
 def make_hybrid_objective(cached_tracks, max_velocity_steps, rot_threshold_upper_bound=90.0):
@@ -151,6 +153,27 @@ class RMSEEarlyStoppingCallback:
             study.stop()
 
 
+class TrialProgressCallback:
+    def __init__(self, model_label, total_trials):
+        self.model_label = str(model_label)
+        self.total_trials = int(total_trials)
+
+    def __call__(self, study, trial):
+        completed = len(study.trials)
+        value = trial.value
+        value_txt = f"{float(value):.6f}" if value is not None and np.isfinite(value) else "n/a"
+        best_txt = "n/a"
+        try:
+            best_txt = f"{float(study.best_value):.6f}"
+        except Exception:
+            pass
+
+        print(
+            f"[Trial] {self.model_label}: {completed}/{self.total_trials} "
+            f"(trial #{trial.number}) value={value_txt} best={best_txt}"
+        )
+
+
 
 
 def _load_branch_velocity_steps(diagnostics_dir):
@@ -173,14 +196,8 @@ def _load_existing_best_rows(diagnostics_dir):
     return pd.read_csv(diagnostics_dir / "tuning_best_params_val.csv").to_dict(orient="records")
 
 
-def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diagnostics_dir):
-
-    #1. Load validation tracks into memory
-    #2. Create Optuna study and optimize the objective function with TPE and early stopping
-    # (TPE not the most efficient, but used here to demonstrate how to use Optuna
-    #3. Save all trials and best parameters to CSV
-    #4. Return best parameters for summary table
-
+def run_grid_search_for_velocity_model(model_key, model_label, model_cls, data_dir, diagnostics_dir, model_kwargs=None):
+    # Full grid search over velocity_steps from 1..max_velocity_steps.
     cached_tracks = load_tracks_cached_numpy(
         data_dir,
         split='val',
@@ -188,25 +205,39 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
         sample_pct=TUNING_VALIDATION_PCT,
         seed=SEED,
     )
+
     max_velocity_steps = max(len(track['x_ctx']) - 1 for track in cached_tracks)
     max_velocity_steps = max(1, int(max_velocity_steps))
+    model_kwargs = dict(model_kwargs or {})
 
-    sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=5, n_ei_candidates=100)
-    study = optuna.create_study(
-        study_name=f"{model_key}_val_gridsearch",
-        direction="minimize",
-        sampler=sampler,
-    )
+    rows = []
+    best_steps = 1
+    best_rmse = float("inf")
 
-    total = N_TRIALS
-    study.optimize(
-        make_objective(model_cls, cached_tracks, max_velocity_steps),
-        n_trials=total,
-        n_jobs=1,
-        callbacks=[RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA)],
-    )
+    for i, velocity_steps in enumerate(range(1, max_velocity_steps + 1), start=1):
+        model = model_cls(velocity_steps=velocity_steps, **model_kwargs)
+        metrics = evaluate_model_cached_numpy(model, cached_tracks)
+        rmse = float(metrics["RMSE"])
 
-    trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
+        if np.isfinite(rmse) and rmse < best_rmse:
+            best_rmse = rmse
+            best_steps = int(velocity_steps)
+
+        value_txt = f"{rmse:.6f}" if np.isfinite(rmse) else "n/a"
+        best_txt = f"{best_rmse:.6f}" if np.isfinite(best_rmse) else "n/a"
+        print(
+            f"[Grid] {model_label}: {i}/{max_velocity_steps} "
+            f"(velocity_steps={velocity_steps}) value={value_txt} best={best_txt}"
+        )
+
+        rows.append({
+            "number": i - 1,
+            "value": rmse,
+            "params_velocity_steps": int(velocity_steps),
+            "state": "COMPLETE",
+        })
+
+    trials_df = pd.DataFrame(rows)
     trials_df["model_key"] = model_key
     trials_df["model_label"] = model_label
     trials_df["sample_pct"] = TUNING_VALIDATION_PCT
@@ -214,15 +245,11 @@ def run_optimization_for_model(model_key, model_label, model_cls, data_dir, diag
     csv_path = diagnostics_dir / f"tuning_{model_key}_val.csv"
     trials_df.to_csv(csv_path, index=False)
 
-    best = study.best_trial
-    best_steps = int(best.params["velocity_steps"])
-    best_rmse = float(best.value)
-
     return {
         "model_key": model_key,
         "model_label": model_label,
-        "best_velocity_steps": best_steps,
-        "best_val_rmse": best_rmse,
+        "best_velocity_steps": int(best_steps),
+        "best_val_rmse": float(best_rmse),
         "trials_csv": str(csv_path),
         "sample_pct": TUNING_VALIDATION_PCT,
     }, trials_df
@@ -270,6 +297,7 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
         n_jobs=1,
         callbacks=[
             RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
+            TrialProgressCallback(model_label="Hybrid CV/CTRV", total_trials=HYBRID_N_TRIALS),
         ],
     )
 
@@ -323,6 +351,7 @@ def run_kalman_optimization(data_dir, diagnostics_dir):
         n_jobs=1,
         callbacks=[
             RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
+            TrialProgressCallback(model_label="Kalman", total_trials=KALMAN_N_TRIALS),
         ],
     )
 
@@ -371,6 +400,7 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
         n_jobs=1,
         callbacks=[
             RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
+            TrialProgressCallback(model_label="CTRV EKF", total_trials=CTRV_EKF_N_TRIALS),
         ],
     )
 
@@ -399,16 +429,17 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
         "sample_pct": TUNING_VALIDATION_PCT,
     }, trials_df
 
-def _run_model_job(result_queue, model_key, model_label, model_cls, data_dir, diagnostics_dir):
-    # mp.Process target: runs CV/CTRV tuning in a separate process
+def _run_model_job(result_queue, model_key, model_label, model_cls, data_dir, diagnostics_dir, model_kwargs=None):
+    # mp.Process target: runs 1D velocity model tuning in a separate process
     # and puts (best_row, trials_df) into the shared queue for the main process to collect
     # necessary for multiprocessing
-    best_row, trials_df = run_optimization_for_model(
+    best_row, trials_df = run_grid_search_for_velocity_model(
         model_key=model_key,
         model_label=model_label,
         model_cls=model_cls,
         data_dir=data_dir,
         diagnostics_dir=diagnostics_dir,
+        model_kwargs=model_kwargs,
     )
     result_queue.put((best_row, trials_df))
 
@@ -455,7 +486,7 @@ if __name__ == "__main__":
     if any(p.exists() for p in existing_tuning_csvs):
         print(f"[Warning] Existing tuning outputs found in {diagnostics_dir}. Files will be overwritten for run '{CONFIG['run']['name']}'.")
 
-    print(f"Tuning velocity_steps with {N_TRIALS} trial(s) for CV/CTRV/CTRV Arc and 3D hybrid search with {HYBRID_N_TRIALS} trial(s)")
+    print(f"Hybrid search trials: {HYBRID_N_TRIALS} | Kalman: {KALMAN_N_TRIALS} | CTRV EKF: {CTRV_EKF_N_TRIALS}")
     print(
         f"Run: {CONFIG['run']['name']} | seed={SEED} | sample_pct={SAMPLE_PCT}% "
         f"| tuning_validation_pct={TUNING_VALIDATION_PCT}%"
@@ -464,14 +495,28 @@ if __name__ == "__main__":
 
     standard_jobs = []
     if RUN_CV:
-        standard_jobs.append(("cv", "Constant Velocity", ConstantVelocityModel))
+        standard_jobs.append(("cv", "Constant Velocity", ConstantVelocityModel, {}))
     if RUN_CTRV:
-        standard_jobs.append(("ctrv", "CTRV", ConstantTurnRateVelocityModel))
+        standard_jobs.append(("ctrv", "CTRV", ConstantTurnRateVelocityModel, {}))
     if RUN_CTRV_ARC:
-        standard_jobs.append(("ctrv_arc", "CTRV Arc", ConstantTurnRateVelocityArcModel))
+        standard_jobs.append(("ctrv_arc", "CTRV Arc", ConstantTurnRateVelocityArcModel, {}))
+    if RUN_TIREX_LSTM:
+        standard_jobs.append((
+            "tirex_lstm",
+            "TiRex LSTM",
+            TirexLSTMModel,
+            {
+                "model_name": TIREX_MODEL_NAME,
+                "device": TIREX_DEVICE,
+                "backend": TIREX_BACKEND,
+                "compile_model": TIREX_COMPILE_MODEL,
+                "batch_size": TIREX_BATCH_SIZE,
+                "scaler_path": str(PROJECT_ROOT / TIREX_SCALER_PATH),
+            },
+        ))
 
     if not standard_jobs and not RUN_HYBRID and not RUN_KALMAN and not RUN_CTRV_EKF:
-        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_CTRV_ARC and/or RUN_HYBRID and/or RUN_KALMAN and/or RUN_CTRV_EKF to True.")
+        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_CTRV_ARC and/or RUN_TIREX_LSTM and/or RUN_HYBRID and/or RUN_KALMAN and/or RUN_CTRV_EKF to True.")
         raise SystemExit(0)
 
     best_rows = []
@@ -492,7 +537,7 @@ if __name__ == "__main__":
         best_rows = _load_existing_best_rows(diagnostics_dir)
         print("Using existing tuning_best_params_val.csv for CV/CTRV hybrid seeding.")
 
-    for model_key, model_label, model_cls in standard_jobs:
+    for model_key, model_label, model_cls, model_kwargs in standard_jobs:
         p = mp.Process(
             target=_run_model_job,
             args=(
@@ -502,6 +547,7 @@ if __name__ == "__main__":
                 model_cls,
                 data_dir,
                 diagnostics_dir,
+                model_kwargs,
             ),
         )
         p.start()

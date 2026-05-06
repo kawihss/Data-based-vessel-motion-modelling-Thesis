@@ -6,6 +6,7 @@ requests
 joblib
 tqdm
 pyyaml
+fastparquet
 
 #coordinates
 pyproj
@@ -28,3 +29,6 @@ optuna
 filterpy
 transformers
 accelerate
+chronos-forecasting>=2.0
+tirex-ts
+xlstm

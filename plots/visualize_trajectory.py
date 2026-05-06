@@ -12,6 +12,7 @@ from evaluation.runtime_config import load_runtime_config, resolve_run_paths
 
 #this script can be used to manually inspect individual tracks
 #created with help of Claude Sonnet for interactive plotting
+#plots not availably on VERA via ssh, run locally
 
 # Globals also togglable in the GUI
 SHOW_CV = True
@@ -20,6 +21,8 @@ SHOW_CTRV_ARC = True
 SHOW_HYBRID = True
 SHOW_KALMAN = True
 SHOW_CTRV_EKF = True
+SHOW_CHRONOS2 = True
+SHOW_TIREX = True
 
 
 def _has_prediction_files_for_stem(model_output_dir, source_stem):
@@ -82,12 +85,14 @@ def load_data(source):
 
 def load_model_predictions(source_file, model_output_dir='output/08_baseline_results/model_output'):
     model_specs = {
-        'constant_velocity': {'label': 'CV',     'color': '#ff7f0e', 'marker': 'x', 'alpha': 0.9},
-        'ctrv':              {'label': 'CTRV',   'color': '#d62728', 'marker': '^', 'alpha': 0.9},
-        'ctrv_arc':          {'label': 'CTRV Arc', 'color': '#e377c2', 'marker': 'v', 'alpha': 0.85},
-        'hybrid_cv_ctrv':    {'label': 'Hybrid', 'color': '#9467bd', 'marker': 's', 'alpha': 0.45},#overlaps, transparent
-        'kalman':            {'label': 'Kalman', 'color': '#17becf', 'marker': 'D', 'alpha': 0.45}, #overlaps, transparent
-        'ctrv_ekf':          {'label': 'CTRV EKF', 'color': '#8c564b', 'marker': 'P', 'alpha': 0.55},
+        'constant_velocity': {'label': 'CV',        'color': '#ff7f0e', 'marker': 'x', 'alpha': 0.9},
+        'ctrv':              {'label': 'CTRV',      'color': '#d62728', 'marker': '^', 'alpha': 0.9},
+        'ctrv_arc':          {'label': 'CTRV Arc',  'color': '#e377c2', 'marker': 'v', 'alpha': 0.85},
+        'hybrid_cv_ctrv':    {'label': 'Hybrid',    'color': '#9467bd', 'marker': 's', 'alpha': 0.45},#overlaps, transparent
+        'kalman':            {'label': 'Kalman',    'color': '#17becf', 'marker': 'D', 'alpha': 0.45}, #overlaps, transparent
+        'ctrv_ekf':          {'label': 'CTRV EKF',  'color': '#8c564b', 'marker': 'P', 'alpha': 0.55},
+        'chronos2_zero_shot':{'label': 'Chronos-2', 'color': '#2ecc71', 'marker': 'o', 'alpha': 0.9},
+        'tirex_lstm':        {'label': 'TiRex',     'color': '#f39c12', 'marker': '*', 'alpha': 0.9},
     }
 
     source_stem = Path(source_file).stem
@@ -121,12 +126,14 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
 
     # visibility state, keyed by model_key, initialised from global switches
     visibility = {
-        'constant_velocity': SHOW_CV,
-        'ctrv':              SHOW_CTRV,
-        'ctrv_arc':          SHOW_CTRV_ARC,
-        'hybrid_cv_ctrv':    SHOW_HYBRID,
-        'kalman':            SHOW_KALMAN,
-        'ctrv_ekf':          SHOW_CTRV_EKF,
+        'constant_velocity':  SHOW_CV,
+        'ctrv':               SHOW_CTRV,
+        'ctrv_arc':           SHOW_CTRV_ARC,
+        'hybrid_cv_ctrv':     SHOW_HYBRID,
+        'kalman':             SHOW_KALMAN,
+        'ctrv_ekf':           SHOW_CTRV_EKF,
+        'chronos2_zero_shot': SHOW_CHRONOS2,
+        'tirex_lstm':         SHOW_TIREX,
     }
 
     fig, ax = plt.subplots(figsize=(14, 9))
@@ -185,6 +192,19 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
             y_series.append(model_track['y_pred'])
             legend_added = True
 
+            # Draw uncertainty band for models that output quantile columns
+            if 'x_pred_q10' in model_track.columns and 'x_pred_q90' in model_track.columns:
+                ax.plot(model_track['x_pred_q10'], model_track['y_pred_q10'],
+                        color=style['color'], alpha=alpha * 0.5, linewidth=1.0,
+                        linestyle='--', zorder=4)
+                ax.plot(model_track['x_pred_q90'], model_track['y_pred_q90'],
+                        color=style['color'], alpha=alpha * 0.5, linewidth=1.0,
+                        linestyle='--', zorder=4)
+                x_series.append(model_track['x_pred_q10'])
+                x_series.append(model_track['x_pred_q90'])
+                y_series.append(model_track['y_pred_q10'])
+                y_series.append(model_track['y_pred_q90'])
+
         if legend_added:
             ax.legend(loc='best')
 
@@ -224,8 +244,8 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
         fig.canvas.draw_idle()
 
     # Model toggle buttons
-    toggle_keys   = ['constant_velocity', 'ctrv', 'ctrv_arc', 'hybrid_cv_ctrv', 'kalman', 'ctrv_ekf']
-    toggle_labels = ['CV', 'CTRV', 'CTRV Arc', 'Hybrid', 'Kalman', 'CTRV EKF']
+    toggle_keys   = ['constant_velocity', 'ctrv', 'ctrv_arc', 'hybrid_cv_ctrv', 'kalman', 'ctrv_ekf', 'chronos2_zero_shot', 'tirex_lstm']
+    toggle_labels = ['CV', 'CTRV', 'CTRV Arc', 'Hybrid', 'Kalman', 'CTRV EKF', 'Chronos-2', 'TiRex']
     toggle_active = [visibility[k] for k in toggle_keys]
 
     ax_check = plt.axes([0.15, 0.01, 0.50, 0.08])

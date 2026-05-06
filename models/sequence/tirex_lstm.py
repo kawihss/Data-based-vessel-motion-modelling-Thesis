@@ -1,0 +1,206 @@
+from __future__ import annotations
+
+import numpy as np
+from pathlib import Path
+
+import joblib
+
+from models.base_model import BaselineModel
+
+import os
+os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9"
+os.environ["CUDA_LIB"] = "/usr/local/cuda-12.6/targets/x86_64-linux/lib"
+os.environ["XLSTM_EXTRA_INCLUDE_PATHS"] = "/usr/local/cuda-12.6/include"
+
+try:
+    from tirex import load_model
+except ImportError:  # pragma: no cover
+    load_model = None
+
+import torch
+torch.backends.cudnn.benchmark = True  # 4090
+torch.backends.cudnn.enabled = True    # 4090
+
+_TIREX_QUANTILES = (0.1, 0.9)
+_TIREX_Q_INDEX = {0.1: 0, 0.9: 8}
+
+
+class TirexLSTMModel(BaselineModel):
+    _MODEL_CACHE = {}
+    _SCALER_CACHE = {}
+
+    @classmethod
+    def clear_cache(cls):
+        cls._MODEL_CACHE.clear()
+        cls._SCALER_CACHE.clear()
+    _DEFAULT_SCALER_PATH = Path(__file__).resolve().parents[2] / "output" / "05_normalized" / "scalers.pkl"
+
+    def __init__(
+        self,
+        velocity_steps=8,
+        model_name="NX-AI/TiRex",
+        device=None,
+        backend="torch",
+        compile_model=False,
+        scaler_path=None,
+        batch_size=1,
+    ):
+        super().__init__("TiRexLSTM")
+        self.velocity_steps = int(velocity_steps)
+        self.model_name = str(model_name)
+        self.device = device
+        self.backend = backend
+        self.compile_model = bool(compile_model)
+        self.scaler_path = scaler_path
+        self.batch_size = int(batch_size)
+
+    def _get_model(self):
+   
+        cache_key = (self.model_name, self.device, self.backend, self.compile_model)
+        model = self._MODEL_CACHE.get(cache_key)
+        if model is None:
+            model = load_model(
+                self.model_name,
+                device=self.device,
+                backend=self.backend,
+                compile=self.compile_model,
+            )
+            self._MODEL_CACHE[cache_key] = model
+        return model
+
+    def _resolve_scaler_path(self):
+        if self.scaler_path is None:
+            return self._DEFAULT_SCALER_PATH
+        return Path(self.scaler_path)
+
+    def _get_dxdy_scaler_params(self):
+        scaler_path = self._resolve_scaler_path()
+        cache_key = str(scaler_path)
+        cached = self._SCALER_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+        scalers = joblib.load(scaler_path)
+        global_scaler = scalers.get("global_scaler", {})
+        means = np.asarray(global_scaler.get("mean", []), dtype=float)
+        scales = np.asarray(global_scaler.get("scale", []), dtype=float)
+     
+
+        params = {
+            "dx_mean": float(means[0]),
+            "dx_scale": float(scales[0]),
+            "dy_mean": float(means[1]),
+            "dy_scale": float(scales[1]),
+        }
+        self._SCALER_CACHE[cache_key] = params
+        return params
+
+    def _forecast_univariate_channels(self, x_ctx, y_ctx, n_pred_steps):
+        model = self._get_model()
+        context = np.stack([x_ctx, y_ctx], axis=0).astype(np.float32)
+        _, mean = model.forecast(
+            context=context,
+            output_type="numpy",
+            prediction_length=int(n_pred_steps),
+        )
+        mean = np.asarray(mean, dtype=float)
+        x_pred = mean[0, :n_pred_steps]
+        y_pred = mean[1, :n_pred_steps]
+        return x_pred[:n_pred_steps], y_pred[:n_pred_steps]
+
+
+    def _denormalize_displacements(self, pred_norm_dx, pred_norm_dy):
+        scaler_params = self._get_dxdy_scaler_params()
+        pred_dx = scaler_params["dx_scale"] * np.asarray(pred_norm_dx, dtype=float) + scaler_params["dx_mean"]
+        pred_dy = scaler_params["dy_scale"] * np.asarray(pred_norm_dy, dtype=float) + scaler_params["dy_mean"]
+        return pred_dx, pred_dy
+
+    def _predict_from_series(self, dx_norm, dy_norm, n_pred_steps):
+        if n_pred_steps <= 0:
+            return np.empty((0, 2), dtype=float)
+
+        dx_norm = np.asarray(dx_norm, dtype=float).reshape(-1)
+        dy_norm = np.asarray(dy_norm, dtype=float).reshape(-1)
+        if dx_norm.size == 0 or dy_norm.size == 0:
+            return np.zeros((int(n_pred_steps), 2), dtype=float)
+
+        window = max(1, min(int(self.velocity_steps), len(dx_norm), len(dy_norm)))
+        norm_dx_ctx = dx_norm[-window:]
+        norm_dy_ctx = dy_norm[-window:]
+
+        pred_norm_dx, pred_norm_dy = self._forecast_univariate_channels(
+            norm_dx_ctx, norm_dy_ctx, int(n_pred_steps)
+        )
+
+        pred_dx, pred_dy = self._denormalize_displacements(pred_norm_dx, pred_norm_dy)
+        return np.column_stack([pred_dx, pred_dy])
+
+    def predict_quantiles(self, context_df, n_pred_steps):
+        n_pred_steps = int(n_pred_steps)
+        if n_pred_steps <= 0:
+            return {float(q): np.empty((0, 2), dtype=float) for q in _TIREX_QUANTILES}
+
+        ctx = context_df.sort_values("t_utc") if "t_utc" in context_df.columns else context_df
+        dx_norm = np.asarray(ctx["dx_norm"].values, dtype=float).reshape(-1)
+        dy_norm = np.asarray(ctx["dy_norm"].values, dtype=float).reshape(-1)
+        if dx_norm.size == 0 or dy_norm.size == 0:
+            return {float(q): np.zeros((n_pred_steps, 2), dtype=float) for q in _TIREX_QUANTILES}
+
+        window = max(1, min(int(self.velocity_steps), len(dx_norm), len(dy_norm)))
+        context = np.stack([dx_norm[-window:], dy_norm[-window:]], axis=0).astype(np.float32)
+        model = self._get_model()
+        quantiles, mean = model.forecast(
+            context=context,
+            output_type="numpy",
+            prediction_length=n_pred_steps,
+        )
+
+        quantiles = np.asarray(quantiles, dtype=float)
+
+        result = {}
+        for quantile in _TIREX_QUANTILES:
+            q_idx = _TIREX_Q_INDEX[float(quantile)]
+            dx_series = quantiles[0, :n_pred_steps, q_idx]
+            dy_series = quantiles[1, :n_pred_steps, q_idx]
+            pred_dx, pred_dy = self._denormalize_displacements(dx_series, dy_series)
+            result[float(quantile)] = np.column_stack([pred_dx, pred_dy])
+        return result
+
+    def predict_batch_from_cached_tracks(self, tracks, n_pred_steps):
+        model = self._get_model()
+        contexts = []
+        for track in tracks:
+            dx_norm = np.asarray(track["dx_norm_ctx"], dtype=float).reshape(-1)
+            dy_norm = np.asarray(track["dy_norm_ctx"], dtype=float).reshape(-1)
+            window = max(1, min(int(self.velocity_steps), len(dx_norm), len(dy_norm)))
+            contexts.append(dx_norm[-window:].astype(np.float32))
+            contexts.append(dy_norm[-window:].astype(np.float32))
+
+        # one forecast call for all tracks; channels are interleaved → (B*2, n_pred_steps)
+        _, means = model.forecast(context=contexts, output_type="numpy", prediction_length=int(n_pred_steps))
+        means = np.asarray(means, dtype=float)
+
+        return [
+            np.column_stack(self._denormalize_displacements(means[i * 2, :n_pred_steps], means[i * 2 + 1, :n_pred_steps]))
+            for i in range(len(tracks))
+        ]
+
+    def predict_from_cached_track(self, track, n_pred_steps):
+        return self._predict_from_series(
+            track["dx_norm_ctx"],
+            track["dy_norm_ctx"],
+            n_pred_steps,
+        )
+
+    def predict(self, context_df, n_pred_steps):
+        ctx = context_df.sort_values("t_utc") if "t_utc" in context_df.columns else context_df
+        return self._predict_from_series(
+            ctx["dx_norm"].values,
+            ctx["dy_norm"].values,
+            n_pred_steps,
+        )
+
+    def predict_from_arrays(self, x, y, rot, n_pred_steps):
+        raise NotImplementedError( # would be interesting to compare based on x, y, but not implemented now because we want to avoid overfitting
+            "TiRexLSTM requires normalized dx/dy inputs. Use predict_from_cached_track or predict instead."
+        )

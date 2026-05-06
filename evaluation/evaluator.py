@@ -10,7 +10,7 @@ from .runtime_config import subsample_items
 CONTEXT_LABELS = {'river', 'channel', 'harbour', 'lock', 'unknown'}
 MONTH_PATTERN = re.compile(r"(\d{4})-(\d{2})_\d{2}$")
 
-TRACK_USECOLS = ['track_id', 'role', 't_utc', 'x', 'y', 'rot', 'vessel_id', 'context']
+TRACK_USECOLS = ['track_id', 'role', 't_utc', 'x', 'y', 'rot', 'vessel_id', 'context', 'dx_norm', 'dy_norm', 'sog_norm', 'cog_sin_norm', 'cog_cos_norm', 'dt_norm', 'rot_norm']
 
 #internal functions marked _name
 
@@ -87,12 +87,26 @@ def load_tracks_cached_numpy(data_dir, split='test', context_filter=None, sample
             x_ctx = ctx['x'].to_numpy(dtype=float, copy=True)
             y_ctx = ctx['y'].to_numpy(dtype=float, copy=True)
             rot_ctx = ctx['rot'].to_numpy(dtype=float, copy=True)
+            dx_norm_ctx = ctx['dx_norm'].to_numpy(dtype=float, copy=True)
+            dy_norm_ctx = ctx['dy_norm'].to_numpy(dtype=float, copy=True)
+            sog_norm_ctx = ctx['sog_norm'].to_numpy(dtype=float, copy=True)
+            cog_sin_norm_ctx = ctx['cog_sin_norm'].to_numpy(dtype=float, copy=True)
+            cog_cos_norm_ctx = ctx['cog_cos_norm'].to_numpy(dtype=float, copy=True)
+            dt_norm_ctx = ctx['dt_norm'].to_numpy(dtype=float, copy=True)
+            rot_norm_ctx = ctx['rot_norm'].to_numpy(dtype=float, copy=True)
             true_xy = pred[['x', 'y']].to_numpy(dtype=float, copy=True)
 
             cached_tracks.append({
                 'x_ctx': x_ctx,
                 'y_ctx': y_ctx,
                 'rot_ctx': rot_ctx,
+                'dx_norm_ctx': dx_norm_ctx,
+                'dy_norm_ctx': dy_norm_ctx,
+                'sog_norm_ctx': sog_norm_ctx,
+                'cog_sin_norm_ctx': cog_sin_norm_ctx,
+                'cog_cos_norm_ctx': cog_cos_norm_ctx,
+                'dt_norm_ctx': dt_norm_ctx,
+                'rot_norm_ctx': rot_norm_ctx,
                 'last_x': float(x_ctx[-1]),
                 'last_y': float(y_ctx[-1]),
                 'true_xy': true_xy,
@@ -142,8 +156,20 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
         'context',
         'pred_step',
         't_utc_pred',
+        'dx_pred_q10',
+        'dy_pred_q10',
+        'dx_pred_q50',
+        'dy_pred_q50',
+        'dx_pred_q90',
+        'dy_pred_q90',
         'x_pred',
         'y_pred',
+        'x_pred_q10',
+        'y_pred_q10',
+        'x_pred_q50',
+        'y_pred_q50',
+        'x_pred_q90',
+        'y_pred_q90',
         'x_gt',
         'y_gt',
     ]
@@ -160,8 +186,12 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
             last_x = context_df['x'].iloc[-1]
             last_y = context_df['y'].iloc[-1]
 
+            quantile_predictions = model.predict_quantiles(context_df, n_pred_steps) if hasattr(model, 'predict_quantiles') else None
             displacements = model.predict(context_df, n_pred_steps)
             pred_positions = reconstruct_positions(last_x, last_y, displacements)
+            lower_positions = reconstruct_positions(last_x, last_y, quantile_predictions[0.1]) if quantile_predictions is not None else None
+            median_positions = pred_positions
+            upper_positions = reconstruct_positions(last_x, last_y, quantile_predictions[0.9]) if quantile_predictions is not None else None
 
             if len(pred_positions) != n_pred_steps:
                 continue
@@ -183,8 +213,20 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
                     'context': context_label,
                     'pred_step': i + 1,
                     't_utc_pred': pred_df['t_utc'].iloc[i] if 't_utc' in pred_df else '',
+                    'dx_pred_q10': float(quantile_predictions[0.1][i, 0]) if quantile_predictions is not None else '',
+                    'dy_pred_q10': float(quantile_predictions[0.1][i, 1]) if quantile_predictions is not None else '',
+                    'dx_pred_q50': float(displacements[i, 0]),
+                    'dy_pred_q50': float(displacements[i, 1]),
+                    'dx_pred_q90': float(quantile_predictions[0.9][i, 0]) if quantile_predictions is not None else '',
+                    'dy_pred_q90': float(quantile_predictions[0.9][i, 1]) if quantile_predictions is not None else '',
                     'x_pred': float(pred_positions[i, 0]),
                     'y_pred': float(pred_positions[i, 1]),
+                    'x_pred_q10': float(lower_positions[i, 0]) if lower_positions is not None else '',
+                    'y_pred_q10': float(lower_positions[i, 1]) if lower_positions is not None else '',
+                    'x_pred_q50': float(median_positions[i, 0]),
+                    'y_pred_q50': float(median_positions[i, 1]),
+                    'x_pred_q90': float(upper_positions[i, 0]) if upper_positions is not None else '',
+                    'y_pred_q90': float(upper_positions[i, 1]) if upper_positions is not None else '',
                     'x_gt': float(pred_df['x'].iloc[i]),
                     'y_gt': float(pred_df['y'].iloc[i]),
                 })
@@ -240,25 +282,43 @@ def evaluate_model_cached_numpy(model, cached_tracks):
     all_true = []
     all_pred = []
 
-    for track in cached_tracks:
-        n_pred_steps = track['n_pred_steps']
-        if n_pred_steps <= 0:
-            continue
+    batch_size = getattr(model, 'batch_size', 1)
+    if hasattr(model, 'predict_batch_from_cached_tracks') and batch_size > 1:
+        valid_tracks = [t for t in cached_tracks if t['n_pred_steps'] > 0]
+        for i in range(0, len(valid_tracks), batch_size):
+            batch = valid_tracks[i:i + batch_size]
+            n_pred_steps = batch[0]['n_pred_steps']
+            batch_displacements = model.predict_batch_from_cached_tracks(batch, n_pred_steps)
+            for track, displacements in zip(batch, batch_displacements):
+                pred_positions = reconstruct_positions(track['last_x'], track['last_y'], displacements)
+                true_positions = track['true_xy']
+                if len(pred_positions) != len(true_positions):
+                    continue
+                all_true.append(true_positions)
+                all_pred.append(pred_positions)
+    else:
+        for track in cached_tracks:
+            n_pred_steps = track['n_pred_steps']
+            if n_pred_steps <= 0:
+                continue
 
-        displacements = model.predict_from_arrays(
-            track['x_ctx'],
-            track['y_ctx'],
-            track['rot_ctx'],
-            n_pred_steps,
-        )
-        pred_positions = reconstruct_positions(track['last_x'], track['last_y'], displacements)
-        true_positions = track['true_xy']
+            if hasattr(model, 'predict_from_cached_track'):
+                displacements = model.predict_from_cached_track(track, n_pred_steps)
+            else:
+                displacements = model.predict_from_arrays(
+                    track['x_ctx'],
+                    track['y_ctx'],
+                    track['rot_ctx'],
+                    n_pred_steps,
+                )
+            pred_positions = reconstruct_positions(track['last_x'], track['last_y'], displacements)
+            true_positions = track['true_xy']
 
-        if len(pred_positions) != len(true_positions):
-            continue
+            if len(pred_positions) != len(true_positions):
+                continue
 
-        all_true.append(true_positions)
-        all_pred.append(pred_positions)
+            all_true.append(true_positions)
+            all_pred.append(pred_positions)
 
     if not all_true:
         return {

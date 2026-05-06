@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 
-START_AT_STEP = 4   # Choose 1-6
+START_AT_STEP = 0   # Choose 0-6 (0 = run download 3x first, then step 1 onwards)
 CLEAR_OUTPUTS = True # Clears folders for active steps
 
 STEPS = [
@@ -34,12 +34,19 @@ def run_script(script_name: str):
 if __name__ == "__main__":
     print("AIS Vessel Trajectory Pipeline")
     print(f"Resume from Step: {START_AT_STEP} | Clear: {CLEAR_OUTPUTS}")
-    
+
     output_base = Path("output")
-    
-    # Step 0: Optional Cleanup
+
+    # Step 0: Run download 3 times (retries help with flaky connections)
+    if START_AT_STEP == 0:
+        for attempt in range(1, 4):
+            print(f"\n--- Download attempt {attempt}/3 ---")
+            run_script("00_download.py")
+
+    # Optional Cleanup
+    active_start = max(START_AT_STEP - 1, 0)
     if CLEAR_OUTPUTS:
-        for i in range(START_AT_STEP - 1, len(STEPS)):
+        for i in range(active_start, len(STEPS)):
             step_output = Path(STEPS[i][2])
             if step_output.is_dir():
                 for file in step_output.glob("*"):
@@ -47,7 +54,7 @@ if __name__ == "__main__":
                 print(f"   Cleared {step_output.name}")
     
     timings = {}
-    for i in range(START_AT_STEP - 1, len(STEPS)):
+    for i in range(active_start, len(STEPS)):
         script_name, _, _ = STEPS[i]
         timings[script_name] = run_script(script_name)
     

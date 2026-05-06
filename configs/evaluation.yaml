@@ -1,12 +1,12 @@
 run:
-  name: default
-  description: default evaluation run
+  name: tirex_crashtest
+  description: running tirex, tuning input length on channel, evaluating on channel
   seed: 42
-  sample_pct: 10 #of 100
+  sample_pct: 1 #of 100
 
 sampling:
-  tuning_validation_pct: 10 #of 100
-  evaluation_pct: 10 #of 100
+  tuning_validation_pct: 1 #of 100
+  evaluation_pct: 1 #of 100
 
 paths:
   baseline_root: output/08_baseline_results
@@ -14,25 +14,47 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: river
-  context_filter_evaluation: river
+  context_filter_tuning: river # null, not none
+  context_filter_evaluation: river # null
+
 
 evaluation:
   export_predictions: true
 
 models:
-  cv: true
-  ctrv: true
-  ctrv_arc: true
-  hybrid: true
-  kalman: true
-  ctrv_ekf: true
+  cv: false
+  ctrv: false
+  ctrv_arc: false
+  hybrid: false
+  kalman: false
+  ctrv_ekf: false
+  tirex_lstm: true
+  chronos2_zero_shot: false
+  tirex:
+    model_name: NX-AI/TiRex
+    device: cuda # null-> auto-detect, or specify "cpu" or "cuda"
+    backend: cuda # cuda # torch + GPU as fallback because of compatibility issues 
+    compile_model: true
+    batch_size: 256000 # tracks per forecast call; reduce if GPU OOM
+    scaler_path: output/05_normalized/scalers.pkl
+  chronos2:
+    model_name: amazon/chronos-2
+    # device_map controls which device(s) the model is loaded onto.
+    # Use "cuda" for the first GPU, "cuda:N" for a specific GPU by index, starting at 0,
+    # "cpu" to force CPU, or "auto".
+    #
+    device_map: cuda #{0: "cuda:0", 1: "cuda:1"} # use both gpus explicitly
+    max_memory: {0: "8GB", 1: "11GB"}
+    torch_dtype: float32
+    context_length: 10
+    prediction_length: 10
+    scaler_path: output/05_normalized/scalers.pkl
 
 tuning:
-  n_trials_standard: 200
-  n_trials_hybrid: 200
-  n_trials_kalman: 200
-  n_trials_ctrv_ekf: 200
+  n_trials_standard: 30
+  n_trials_hybrid: 100
+  n_trials_kalman: 100
+  n_trials_ctrv_ekf: 100
   early_stopping_patience: 50
   early_stopping_min_delta: 0.0001
 
@@ -40,8 +62,10 @@ plotting:
   step_duration_s: 30
   models:
     constant_velocity: true
-    ctrv: true
-    ctrv_arc: true
-    hybrid_cv_ctrv: true
-    kalman: true
+    ctrv: false
+    ctrv_arc: false
+    hybrid_cv_ctrv: false
+    kalman: false
     ctrv_ekf: true
+    tirex_lstm: true
+    chronos2_zero_shot: true
