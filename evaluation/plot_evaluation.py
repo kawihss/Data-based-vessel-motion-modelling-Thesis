@@ -119,11 +119,11 @@ def plot_monthly_metrics():
         for key, label in ALL_MODEL_LABELS.items():
             month_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_month_{key}.csv"
             if not month_path.exists():
-                print(f"[monthly/{metric}] No per-month file for '{label}', skipping.")
+                #print(f"[monthly/{metric}] No per-month file for '{label}', skipping.")
                 continue
             df = pd.read_csv(month_path)
             if "month" not in df.columns or metric not in df.columns:
-                print(f"[monthly/{metric}] '{label}' CSV missing 'month' or '{metric}' column, skipping.")
+                #print(f"[monthly/{metric}] '{label}' CSV missing 'month' or '{metric}' column, skipping.")
                 continue
 
             df = df.dropna(subset=["month", metric])
@@ -168,11 +168,11 @@ def _plot_context_metric_group(metrics, output_prefix):
         for idx, (key, label) in enumerate(ALL_MODEL_LABELS.items()):
             context_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_context_{key}.csv"
             if not context_path.exists():
-                print(f"[context/{metric}] No per-context file for '{label}', skipping.")
+                #print(f"[context/{metric}] No per-context file for '{label}', skipping.")
                 continue
             df = pd.read_csv(context_path)
             if "context" not in df.columns or metric not in df.columns:
-                print(f"[context/{metric}] '{label}' CSV missing 'context' or '{metric}' column, skipping.")
+                #print(f"[context/{metric}] '{label}' CSV missing 'context' or '{metric}' column, skipping.")
                 continue
 
             aligned = (
@@ -696,6 +696,30 @@ def plot_violin_ctrv_vs_ekf():
         )
 
 
+def plot_violin_chronos_vs_tirex():
+    pairs = [("chronos2_zero_shot", "Chronos-2 Zero-Shot"), ("tirex_lstm", "TiRex LSTM")]
+    plot_df = _load_per_file_rmse(pairs)
+    if plot_df is None:
+        return
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Jahr", 0, "per_year"),
+        ("month", "Monat", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            split=True, inner="quartile", cut=0, scale="width", ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: Chronos-2 vs TiRex LSTM ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            plots_dir / f"{EVAL_SPLIT}_violin_chronos_vs_tirex_{suffix}.png",
+            xrot=xrot,
+        )
+
+
 if __name__ == "__main__":
     print(f"Using configured run directory: {selected_run_dir}")
     print(f"Reading diagnostics from: {diagnostics_dir}")
@@ -710,5 +734,6 @@ if __name__ == "__main__":
     plot_tuning_results()
     plot_violin_cv_vs_kalman()
     plot_violin_ctrv_vs_ekf()
+    plot_violin_chronos_vs_tirex()
 
     print("\nDone.")
