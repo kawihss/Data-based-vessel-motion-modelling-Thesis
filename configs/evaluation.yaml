@@ -1,5 +1,5 @@
 run:
-  name: tirex_crashtest
+  name: lstm_test001
   description: running tirex, tuning input length on channel, evaluating on channel
   seed: 42
   sample_pct: 1 #of 100
@@ -28,7 +28,8 @@ models:
   hybrid: false
   kalman: false
   ctrv_ekf: false
-  tirex_lstm: true
+  tirex_lstm: false
+  minimal_lstm: true
   chronos2_zero_shot: false
   tirex:
     model_name: NX-AI/TiRex
@@ -49,23 +50,40 @@ models:
     context_length: 10
     prediction_length: 10
     scaler_path: output/05_normalized/scalers.pkl
+  minimal_lstm_cfg:
+    checkpoint_path: output/08_baseline_results/models/minimal_lstm.pt
+    scaler_path: output/05_normalized/scalers.pkl
+    device: cuda # cpu or cuda
+    max_epochs: 60
+    patience: 8
+    min_delta: 0.0001
 
 tuning:
   n_trials_standard: 30
   n_trials_hybrid: 100
   n_trials_kalman: 100
   n_trials_ctrv_ekf: 100
+  n_trials_minimal_lstm: 30
   early_stopping_patience: 50
   early_stopping_min_delta: 0.0001
+  minimal_lstm:
+    hidden_size: [64, 128, 256]
+    num_layers: [1, 2]
+    dropout_min: 0.1
+    dropout_max: 0.4
+    learning_rate_min: 0.0001
+    learning_rate_max: 0.01
+    batch_size: [64, 128, 256]
 
 plotting:
   step_duration_s: 30
   models:
-    constant_velocity: true
+    constant_velocity: false
     ctrv: false
     ctrv_arc: false
     hybrid_cv_ctrv: false
     kalman: false
-    ctrv_ekf: true
-    tirex_lstm: true
-    chronos2_zero_shot: true
+    ctrv_ekf: false
+    tirex_lstm: false
+    chronos2_zero_shot: false
+    minimal_lstm: true

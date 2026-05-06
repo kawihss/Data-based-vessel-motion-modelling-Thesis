@@ -14,10 +14,15 @@ import time
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, ConstantTurnRateVelocityArcModel, HybridCVCTRVModel
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
 from models.sequence import TirexLSTMModel
-from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy
+from models.sequence.minimal_lstm import MinimalLSTMNet, CONTEXT_LEN, PRED_LEN, FEATURE_COLUMNS, TARGET_COLUMNS
+from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy, _resolve_files, _read_track_file, _iter_track_groups
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths, update_latest_run_pointer, write_run_metadata, get_sampling_value
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -31,6 +36,15 @@ RUN_HYBRID = bool(CONFIG["models"]["hybrid"])
 RUN_KALMAN = bool(CONFIG["models"]["kalman"])
 RUN_CTRV_EKF = bool(CONFIG["models"]["ctrv_ekf"])
 RUN_TIREX_LSTM = bool(CONFIG["models"]["tirex_lstm"])
+RUN_MINIMAL_LSTM = bool(CONFIG["models"].get("minimal_lstm", False))
+MINIMAL_LSTM_CFG = CONFIG["models"].get("minimal_lstm_cfg", {})
+MINIMAL_LSTM_DEVICE = str(MINIMAL_LSTM_CFG.get("device", "cpu"))
+MINIMAL_LSTM_CHECKPOINT = str(MINIMAL_LSTM_CFG.get("checkpoint_path", ""))
+MINIMAL_LSTM_MAX_EPOCHS = int(MINIMAL_LSTM_CFG.get("max_epochs", 60))
+MINIMAL_LSTM_PATIENCE = int(MINIMAL_LSTM_CFG.get("patience", 8))
+MINIMAL_LSTM_MIN_DELTA = float(MINIMAL_LSTM_CFG.get("min_delta", 1e-4))
+MINIMAL_LSTM_TUNING_CFG = CONFIG["tuning"].get("minimal_lstm", {})
+MINIMAL_LSTM_N_TRIALS = int(CONFIG["tuning"].get("n_trials_minimal_lstm", 30))
 TIREX_CFG = CONFIG["models"].get("tirex", {})
 TIREX_MODEL_NAME = str(TIREX_CFG.get("model_name", "NX-AI/TiRex"))
 TIREX_DEVICE = TIREX_CFG.get("device", None)
@@ -50,6 +64,137 @@ SAMPLE_PCT = int(CONFIG["run"]["sample_pct"])
 TUNING_VALIDATION_PCT = int(get_sampling_value(CONFIG, "tuning_validation_pct"))
 
 np.random.seed(SEED)
+
+
+def _build_lstm_samples(split, sample_pct=100, seed=SEED):
+    data_dir = PROJECT_ROOT / CONFIG["data"]["parquet_dir"]
+    context_filter = CONFIG["data"].get("context_filter_tuning")
+    files = _resolve_files(data_dir, split, context_filter)
+    if sample_pct < 100:
+        rng = np.random.default_rng(seed)
+        n = max(1, int(len(files) * sample_pct / 100))
+        files = rng.choice(files, size=n, replace=False).tolist()
+    x_list, y_list = [], []
+    for file_path in files:
+        df = _read_track_file(file_path)
+        for context_df, pred_df in _iter_track_groups(df):
+            if len(context_df) < CONTEXT_LEN or len(pred_df) < PRED_LEN:
+                continue
+            x_list.append(context_df.loc[:, FEATURE_COLUMNS].to_numpy(dtype=np.float32)[-CONTEXT_LEN:])
+            y_list.append(pred_df.loc[:, TARGET_COLUMNS].to_numpy(dtype=np.float32)[:PRED_LEN])
+    if not x_list:
+        raise RuntimeError(f"No samples for split '{split}'")
+    return np.stack(x_list), np.stack(y_list)
+
+
+def _lstm_make_loader(x, y, batch_size, shuffle):
+    return DataLoader(TensorDataset(torch.from_numpy(x), torch.from_numpy(y)), batch_size=batch_size, shuffle=shuffle)
+
+
+def _lstm_eval_loss(model, loader, criterion, device):
+    model.eval()
+    total, count = 0.0, 0
+    with torch.no_grad():
+        for x_b, y_b in loader:
+            total += criterion(model(x_b.to(device)), y_b.to(device)).item() * len(x_b)
+            count += len(x_b)
+    return total / count
+
+
+def _run_lstm_training(
+    params,
+    x_train,
+    y_train,
+    x_val,
+    y_val,
+    device_str,
+    max_epochs,
+    patience,
+    min_delta,
+    checkpoint_path=None,
+    history_csv_path=None,
+):
+    hidden_size = int(params["hidden_size"])
+    num_layers = int(params["num_layers"])
+    dropout = float(params["dropout"])
+    lr = float(params["learning_rate"])
+    batch_size = int(params["batch_size"])
+    device = torch.device(device_str)
+
+    model = MinimalLSTMNet(len(FEATURE_COLUMNS), hidden_size, num_layers, dropout, PRED_LEN).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.MSELoss()
+    train_loader = _lstm_make_loader(x_train, y_train, batch_size, shuffle=True)
+    val_loader = _lstm_make_loader(x_val, y_val, batch_size, shuffle=False)
+
+    best_val_loss, best_state, stale = np.inf, None, 0
+    history_rows = []
+
+    for epoch in range(1, max_epochs + 1):
+        model.train()
+        train_loss, count = 0.0, 0
+        for x_b, y_b in train_loader:
+            optimizer.zero_grad(set_to_none=True)
+            loss = criterion(model(x_b.to(device)), y_b.to(device))
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item() * len(x_b)
+            count += len(x_b)
+        train_loss /= count
+        val_loss = _lstm_eval_loss(model, val_loader, criterion, device)
+        print(f"Epoch {epoch:03d} | train={train_loss:.6f} | val={val_loss:.6f}")
+
+        if (best_val_loss - val_loss) > min_delta:
+            best_val_loss = val_loss
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            stale = 0
+        else:
+            stale += 1
+
+        history_rows.append({
+            "epoch": int(epoch),
+            "train_loss": float(train_loss),
+            "val_loss": float(val_loss),
+            "best_val_loss_so_far": float(best_val_loss),
+            "hidden_size": hidden_size,
+            "num_layers": num_layers,
+            "dropout": dropout,
+            "learning_rate": lr,
+            "batch_size": batch_size,
+        })
+
+        if stale >= patience:
+            print(f"Early stopping at epoch {epoch} (patience={patience}, min_delta={min_delta})")
+            break
+
+    if history_csv_path is not None:
+        from pathlib import Path as _Path
+
+        history_path = _Path(history_csv_path)
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(history_rows).to_csv(history_path, index=False)
+        print(f"Saved history: {history_path}")
+
+    if checkpoint_path is not None:
+        from pathlib import Path as _Path
+        _Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+        torch.save({
+            "state_dict": best_state,
+            "pred_len": PRED_LEN,
+            "context_len": CONTEXT_LEN,
+            "input_size": len(FEATURE_COLUMNS),
+            "hidden_size": hidden_size,
+            "num_layers": num_layers,
+            "dropout": dropout,
+            "learning_rate": lr,
+            "batch_size": batch_size,
+            "feature_columns": list(FEATURE_COLUMNS),
+            "target_columns": list(TARGET_COLUMNS),
+            "best_val_loss": float(best_val_loss),
+        }, checkpoint_path)
+        print(f"Saved: {checkpoint_path}  val_loss={best_val_loss:.6f}")
+
+    return float(best_val_loss)
 
 
 def make_hybrid_objective(cached_tracks, max_velocity_steps, rot_threshold_upper_bound=90.0):
@@ -429,6 +574,76 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
         "sample_pct": TUNING_VALIDATION_PCT,
     }, trials_df
 
+
+def run_minimal_lstm_optimization(diagnostics_dir):
+    tuning_cfg = MINIMAL_LSTM_TUNING_CFG
+
+    x_train, y_train = _build_lstm_samples("train", sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
+    x_val, y_val = _build_lstm_samples("val", sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
+    print(f"Minimal LSTM tuning: {x_train.shape[0]} train samples, {x_val.shape[0]} val samples")
+
+    def objective(trial):
+        params = {
+            "hidden_size": trial.suggest_categorical("hidden_size", tuning_cfg["hidden_size"]),
+            "num_layers": trial.suggest_categorical("num_layers", tuning_cfg["num_layers"]),
+            "dropout": trial.suggest_float("dropout", tuning_cfg["dropout_min"], tuning_cfg["dropout_max"]),
+            "learning_rate": trial.suggest_float("learning_rate", tuning_cfg["learning_rate_min"], tuning_cfg["learning_rate_max"], log=True),
+            "batch_size": trial.suggest_categorical("batch_size", tuning_cfg["batch_size"]),
+        }
+        history_path = diagnostics_dir / "minimal_lstm_history" / f"minimal_lstm_trial_{trial.number:04d}.csv"
+        return _run_lstm_training(
+            params, x_train, y_train, x_val, y_val,
+            device_str=MINIMAL_LSTM_DEVICE,
+            max_epochs=MINIMAL_LSTM_MAX_EPOCHS,
+            patience=MINIMAL_LSTM_PATIENCE,
+            min_delta=MINIMAL_LSTM_MIN_DELTA,
+            history_csv_path=history_path,
+        )
+
+    sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=10, multivariate=False)
+    study = optuna.create_study(study_name="minimal_lstm_val_tpe", direction="minimize", sampler=sampler)
+    study.optimize(
+        objective,
+        n_trials=MINIMAL_LSTM_N_TRIALS,
+        n_jobs=1,
+        callbacks=[
+            RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
+            TrialProgressCallback(model_label="Minimal LSTM", total_trials=MINIMAL_LSTM_N_TRIALS),
+        ],
+    )
+
+    trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
+    trials_df["model_key"] = "minimal_lstm"
+    trials_df["model_label"] = "Minimal LSTM"
+    trials_df["sample_pct"] = TUNING_VALIDATION_PCT
+    csv_path = diagnostics_dir / "tuning_minimal_lstm_val.csv"
+    trials_df.to_csv(csv_path, index=False)
+
+    best = study.best_trial
+    _run_lstm_training(
+        best.params, x_train, y_train, x_val, y_val,
+        device_str=MINIMAL_LSTM_DEVICE,
+        max_epochs=MINIMAL_LSTM_MAX_EPOCHS,
+        patience=MINIMAL_LSTM_PATIENCE,
+        min_delta=MINIMAL_LSTM_MIN_DELTA,
+        checkpoint_path=PROJECT_ROOT / MINIMAL_LSTM_CHECKPOINT,
+        history_csv_path=diagnostics_dir / "minimal_lstm_history" / "minimal_lstm_best_retrain.csv",
+    )
+
+    return {
+        "model_key": "minimal_lstm",
+        "model_label": "Minimal LSTM",
+        "best_hidden_size": int(best.params["hidden_size"]),
+        "best_num_layers": int(best.params["num_layers"]),
+        "best_dropout": float(best.params["dropout"]),
+        "best_learning_rate": float(best.params["learning_rate"]),
+        "best_batch_size": int(best.params["batch_size"]),
+        "best_val_loss": float(best.value),
+        "trials_csv": str(csv_path),
+        "sample_pct": TUNING_VALIDATION_PCT,
+    }, trials_df
+
+
 def _run_model_job(result_queue, model_key, model_label, model_cls, data_dir, diagnostics_dir, model_kwargs=None):
     # mp.Process target: runs 1D velocity model tuning in a separate process
     # and puts (best_row, trials_df) into the shared queue for the main process to collect
@@ -515,8 +730,8 @@ if __name__ == "__main__":
             },
         ))
 
-    if not standard_jobs and not RUN_HYBRID and not RUN_KALMAN and not RUN_CTRV_EKF:
-        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_CTRV_ARC and/or RUN_TIREX_LSTM and/or RUN_HYBRID and/or RUN_KALMAN and/or RUN_CTRV_EKF to True.")
+    if not standard_jobs and not RUN_HYBRID and not RUN_KALMAN and not RUN_CTRV_EKF and not RUN_MINIMAL_LSTM:
+        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_CTRV_ARC and/or RUN_TIREX_LSTM and/or RUN_HYBRID and/or RUN_KALMAN and/or RUN_CTRV_EKF and/or RUN_MINIMAL_LSTM to True.")
         raise SystemExit(0)
 
     best_rows = []
@@ -527,6 +742,7 @@ if __name__ == "__main__":
         + (1 if RUN_KALMAN else 0)
         + (1 if RUN_CTRV_EKF else 0)
         + (1 if RUN_HYBRID else 0)
+        + (1 if RUN_MINIMAL_LSTM else 0)
     )
     completed_steps = 0
 
@@ -611,6 +827,14 @@ if __name__ == "__main__":
         all_trials.append(trials_df)
         completed_steps += 1
         print(f"[Progress] {completed_steps}/{total_steps} steps completed ({best_row.get('model_label', best_row.get('model_key', 'unknown'))})")
+
+    if RUN_MINIMAL_LSTM:
+        best_row, trials_df = run_minimal_lstm_optimization(diagnostics_dir)
+        best_rows = [row for row in best_rows if row.get("model_key") != "minimal_lstm"]
+        best_rows.append(best_row)
+        all_trials.append(trials_df)
+        completed_steps += 1
+        print(f"[Progress] {completed_steps}/{total_steps} steps completed (Minimal LSTM)")
 
     best_df = pd.DataFrame(best_rows)
     best_path = diagnostics_dir / "tuning_best_params_val.csv"

@@ -28,6 +28,7 @@ PLOT_KALMAN = bool(PLOT_FLAGS["kalman"])
 PLOT_CTRV_EKF = bool(PLOT_FLAGS["ctrv_ekf"])
 PLOT_TIREX_LSTM = bool(PLOT_FLAGS["tirex_lstm"])
 PLOT_CHRONOS2_ZERO_SHOT = bool(PLOT_FLAGS.get("chronos2_zero_shot", False))
+PLOT_MINIMAL_LSTM = bool(PLOT_FLAGS.get("minimal_lstm", False))
 
 _ALL_MODEL_LABELS = {
     "constant_velocity": "Constant Velocity",
@@ -38,6 +39,7 @@ _ALL_MODEL_LABELS = {
     "ctrv_ekf": "CTRV EKF",
     "tirex_lstm": "TiRex LSTM",
     "chronos2_zero_shot": "Chronos-2 Zero-Shot",
+    "minimal_lstm": "Minimal LSTM",
 }
 _MODEL_FLAGS = {
     "constant_velocity": PLOT_CONSTANT_VELOCITY,
@@ -48,6 +50,7 @@ _MODEL_FLAGS = {
     "ctrv_ekf": PLOT_CTRV_EKF,
     "tirex_lstm": PLOT_TIREX_LSTM,
     "chronos2_zero_shot": PLOT_CHRONOS2_ZERO_SHOT,
+    "minimal_lstm": PLOT_MINIMAL_LSTM,
 }
 ALL_MODEL_LABELS = {k: v for k, v in _ALL_MODEL_LABELS.items() if _MODEL_FLAGS[k]}
 
@@ -511,7 +514,7 @@ def plot_tuning_results():
         return
 
     best_params_path = tuning_diagnostics_dir / "tuning_best_params_val.csv"
-    if not best_params_path.exists():
+    if not best_params_path.exists() or best_params_path.stat().st_size == 0:
         print("[tuning] No tuning_best_params_val.csv found, skipping.")
         return
 
@@ -697,6 +700,8 @@ def plot_violin_ctrv_vs_ekf():
 
 
 def plot_violin_chronos_vs_tirex():
+    if not (PLOT_CHRONOS2_ZERO_SHOT and PLOT_TIREX_LSTM):
+        return
     pairs = [("chronos2_zero_shot", "Chronos-2 Zero-Shot"), ("tirex_lstm", "TiRex LSTM")]
     plot_df = _load_per_file_rmse(pairs)
     if plot_df is None:

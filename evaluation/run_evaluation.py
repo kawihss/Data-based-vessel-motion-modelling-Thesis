@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, ConstantTurnRateVelocityArcModel, HybridCVCTRVModel
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
-from models.sequence import TirexLSTMModel, Chronos2ZeroShotModel
+from models.sequence import TirexLSTMModel, Chronos2ZeroShotModel, MinimalLSTMModel
 from evaluation.evaluator import export_predictions_for_file, _resolve_files, _read_track_file, _iter_track_groups, reconstruct_positions, _extract_month_label
 from evaluation.metrics import evaluate_trajectory, evaluate_quantile_forecast, calculate_channel_importance, calculate_timestep_importance
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths, update_latest_run_pointer, write_run_metadata, get_sampling_value, subsample_items
@@ -23,6 +23,7 @@ RUN_HYBRID = bool(CONFIG["models"]["hybrid"])
 RUN_KALMAN = bool(CONFIG["models"]["kalman"])
 RUN_CTRV_EKF = bool(CONFIG["models"]["ctrv_ekf"])
 RUN_TIREX_LSTM = bool(CONFIG["models"]["tirex_lstm"])
+RUN_MINIMAL_LSTM = bool(CONFIG["models"].get("minimal_lstm", False))
 RUN_CHRONOS2_ZERO_SHOT = bool(CONFIG["models"].get("chronos2_zero_shot", False))
 TIREX_CFG = CONFIG["models"].get("tirex", {})
 TIREX_MODEL_NAME = str(TIREX_CFG.get("model_name", "NX-AI/TiRex"))
@@ -33,6 +34,10 @@ TIREX_COMPILE_MODEL = bool(TIREX_CFG.get("compile_model", False))
 TIREX_BATCH_SIZE = int(TIREX_CFG.get("batch_size", 1))
 TIREX_SCALER_PATH = TIREX_CFG.get("scaler_path", "output/05_normalized/scalers.pkl") # read
 TIREX_SCALER_PATH = str(TIREX_SCALER_PATH).strip() if TIREX_SCALER_PATH is not None else "output/05_normalized/scalers.pkl" # convert
+MINIMAL_LSTM_CFG = CONFIG["models"].get("minimal_lstm_cfg", {})
+MINIMAL_LSTM_CHECKPOINT_PATH = str(MINIMAL_LSTM_CFG.get("checkpoint_path", "")).strip()
+MINIMAL_LSTM_SCALER_PATH = str(MINIMAL_LSTM_CFG.get("scaler_path", "")).strip()
+MINIMAL_LSTM_DEVICE = str(MINIMAL_LSTM_CFG.get("device", "")).strip()
 CHRONOS2_CFG = CONFIG["models"].get("chronos2", {})
 CHRONOS2_MODEL_NAME = str(CHRONOS2_CFG.get("model_name", "amazon/chronos-2"))
 CHRONOS2_DEVICE_MAP = CHRONOS2_CFG.get("device_map", None)
@@ -264,6 +269,24 @@ if __name__ == "__main__":
         if not tirex_kwargs:
             raise ValueError("TiRex LSTM is enabled but no tuned TiRex LSTM parameters were found in tuning_best_params_val.csv")
         models.append(("tirex_lstm", "TiRex LSTM", TirexLSTMModel(**tirex_kwargs)))
+    if RUN_MINIMAL_LSTM:
+        if not MINIMAL_LSTM_CHECKPOINT_PATH:
+            raise ValueError("Minimal LSTM is enabled but models.minimal_lstm_cfg.checkpoint_path is empty")
+        if not MINIMAL_LSTM_SCALER_PATH:
+            raise ValueError("Minimal LSTM is enabled but models.minimal_lstm_cfg.scaler_path is empty")
+        if not MINIMAL_LSTM_DEVICE:
+            raise ValueError("Minimal LSTM is enabled but models.minimal_lstm_cfg.device is empty")
+        models.append(
+            (
+                "minimal_lstm",
+                "Minimal LSTM",
+                MinimalLSTMModel(
+                    checkpoint_path=str(PROJECT_ROOT / MINIMAL_LSTM_CHECKPOINT_PATH),
+                    scaler_path=str(PROJECT_ROOT / MINIMAL_LSTM_SCALER_PATH),
+                    device=MINIMAL_LSTM_DEVICE,
+                ),
+            )
+        )
     if RUN_CHRONOS2_ZERO_SHOT:
         models.append(("chronos2_zero_shot", "Chronos-2 Zero-Shot", Chronos2ZeroShotModel(**chronos2_kwargs)))
 
