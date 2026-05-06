@@ -45,6 +45,7 @@ MINIMAL_LSTM_PATIENCE = int(MINIMAL_LSTM_CFG.get("patience", 8))
 MINIMAL_LSTM_MIN_DELTA = float(MINIMAL_LSTM_CFG.get("min_delta", 1e-4))
 MINIMAL_LSTM_TUNING_CFG = CONFIG["tuning"].get("minimal_lstm", {})
 MINIMAL_LSTM_N_TRIALS = int(CONFIG["tuning"].get("n_trials_minimal_lstm", 30))
+MINIMAL_LSTM_PRELOAD_TO_GPU = bool(MINIMAL_LSTM_CFG.get("preload_to_gpu", False))
 TIREX_CFG = CONFIG["models"].get("tirex", {})
 TIREX_MODEL_NAME = str(TIREX_CFG.get("model_name", "NX-AI/TiRex"))
 TIREX_DEVICE = TIREX_CFG.get("device", None)
@@ -87,8 +88,17 @@ def _build_lstm_samples(split, sample_pct=100, seed=SEED):
     return np.stack(x_list), np.stack(y_list)
 
 
-def _lstm_make_loader(x, y, batch_size, shuffle):
-    return DataLoader(TensorDataset(torch.from_numpy(x), torch.from_numpy(y)), batch_size=batch_size, shuffle=shuffle)
+def _make_lstm_tensors(x_train, y_train, x_val, y_val, device, preload_to_gpu=False):
+    x_train_t = torch.from_numpy(x_train)
+    y_train_t = torch.from_numpy(y_train)
+    x_val_t = torch.from_numpy(x_val)
+    y_val_t = torch.from_numpy(y_val)
+
+    if preload_to_gpu:
+        return x_train_t.to(device), y_train_t.to(device), x_val_t.to(device), y_val_t.to(device), False, True
+
+    pin_memory = device.type == "cuda"
+    return x_train_t, y_train_t, x_val_t, y_val_t, pin_memory, False
 
 
 def _lstm_eval_loss(model, loader, criterion, device):
@@ -122,10 +132,24 @@ def _run_lstm_training(
     device = torch.device(device_str)
 
     model = MinimalLSTMNet(len(FEATURE_COLUMNS), hidden_size, num_layers, dropout, PRED_LEN).to(device)
+    model = torch.compile(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.MSELoss()
-    train_loader = _lstm_make_loader(x_train, y_train, batch_size, shuffle=True)
-    val_loader = _lstm_make_loader(x_val, y_val, batch_size, shuffle=False)
+    x_train_t, y_train_t, x_val_t, y_val_t, pin_memory, preloaded_to_gpu = _make_lstm_tensors(
+        x_train, y_train, x_val, y_val, device, preload_to_gpu=MINIMAL_LSTM_PRELOAD_TO_GPU
+    )
+    train_loader = DataLoader(
+        TensorDataset(x_train_t, y_train_t),
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=pin_memory,
+    )
+    val_loader = DataLoader(
+        TensorDataset(x_val_t, y_val_t),
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=pin_memory,
+    )
 
     best_val_loss, best_state, stale = np.inf, None, 0
     history_rows = []
@@ -135,7 +159,12 @@ def _run_lstm_training(
         train_loss, count = 0.0, 0
         for x_b, y_b in train_loader:
             optimizer.zero_grad(set_to_none=True)
-            loss = criterion(model(x_b.to(device)), y_b.to(device))
+            if preloaded_to_gpu:
+                x_device, y_device = x_b, y_b
+            else:
+                x_device = x_b.to(device, non_blocking=pin_memory)
+                y_device = y_b.to(device, non_blocking=pin_memory)
+            loss = criterion(model(x_device), y_device)
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * len(x_b)

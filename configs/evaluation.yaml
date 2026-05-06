@@ -54,6 +54,7 @@ models:
     checkpoint_path: output/08_baseline_results/models/minimal_lstm.pt
     scaler_path: output/05_normalized/scalers.pkl
     device: cuda # cpu or cuda
+    preload_to_gpu: true
     max_epochs: 60
     patience: 8
     min_delta: 0.0001
@@ -73,7 +74,7 @@ tuning:
     dropout_max: 0.4
     learning_rate_min: 0.0001
     learning_rate_max: 0.01
-    batch_size: [64, 128, 256]
+    batch_size: [128, 256, 512]
 
 plotting:
   step_duration_s: 30
