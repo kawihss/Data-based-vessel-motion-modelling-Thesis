@@ -1,12 +1,12 @@
 run:
-  name: lstm_test001
-  description: running tirex, tuning input length on channel, evaluating on channel
+  name: lstm_test005
+  description: 5 prozent kein filter
   seed: 42
-  sample_pct: 1 #of 100
+  sample_pct: 5 #of 100
 
 sampling:
   tuning_validation_pct: 1 #of 100
-  evaluation_pct: 1 #of 100
+  evaluation_pct: 5 #of 100
 
 paths:
   baseline_root: output/08_baseline_results

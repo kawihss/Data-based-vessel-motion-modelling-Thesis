@@ -611,6 +611,8 @@ def run_minimal_lstm_optimization(diagnostics_dir):
     x_val, y_val = _build_lstm_samples("val", sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
     print(f"Minimal LSTM tuning: {x_train.shape[0]} train samples, {x_val.shape[0]} val samples")
 
+    n_gpus = torch.cuda.device_count() if MINIMAL_LSTM_DEVICE.startswith("cuda") else 0
+
     def objective(trial):
         params = {
             "hidden_size": trial.suggest_categorical("hidden_size", tuning_cfg["hidden_size"]),
@@ -619,10 +621,11 @@ def run_minimal_lstm_optimization(diagnostics_dir):
             "learning_rate": trial.suggest_float("learning_rate", tuning_cfg["learning_rate_min"], tuning_cfg["learning_rate_max"], log=True),
             "batch_size": trial.suggest_categorical("batch_size", tuning_cfg["batch_size"]),
         }
+        device_str = f"cuda:{trial.number % n_gpus}" if n_gpus > 1 else MINIMAL_LSTM_DEVICE
         history_path = diagnostics_dir / "minimal_lstm_history" / f"minimal_lstm_trial_{trial.number:04d}.csv"
         return _run_lstm_training(
             params, x_train, y_train, x_val, y_val,
-            device_str=MINIMAL_LSTM_DEVICE,
+            device_str=device_str,
             max_epochs=MINIMAL_LSTM_MAX_EPOCHS,
             patience=MINIMAL_LSTM_PATIENCE,
             min_delta=MINIMAL_LSTM_MIN_DELTA,
@@ -634,7 +637,7 @@ def run_minimal_lstm_optimization(diagnostics_dir):
     study.optimize(
         objective,
         n_trials=MINIMAL_LSTM_N_TRIALS,
-        n_jobs=1,
+        n_jobs=max(1, n_gpus),
         callbacks=[
             RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
             TrialProgressCallback(model_label="Minimal LSTM", total_trials=MINIMAL_LSTM_N_TRIALS),
