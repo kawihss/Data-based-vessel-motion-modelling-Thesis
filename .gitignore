@@ -14,6 +14,9 @@ backup/
 *.log
 *.out
 
+*log.txt
+
+
 __pycache__/
 *.pyc
 
@@ -21,3 +24,4 @@ Data # simlink
 output # simlink
 backup
 tune_log.txt
+tune_log42.txt
