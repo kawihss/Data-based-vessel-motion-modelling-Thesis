@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 import optuna
 import time
+import joblib
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -24,6 +25,7 @@ from models.sequence import TirexLSTMModel
 from models.sequence.minimal_lstm import MinimalLSTMNet, CONTEXT_LEN, PRED_LEN, FEATURE_COLUMNS, TARGET_COLUMNS
 from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy, _resolve_files, _read_track_file, _iter_track_groups
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths, update_latest_run_pointer, write_run_metadata, get_sampling_value
+from evaluation.plot_optuna import save_study_plots
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG = load_runtime_config(PROJECT_ROOT)
@@ -44,6 +46,10 @@ MINIMAL_LSTM_MAX_EPOCHS = int(MINIMAL_LSTM_CFG.get("max_epochs", 60))
 MINIMAL_LSTM_PATIENCE = int(MINIMAL_LSTM_CFG.get("patience", 8))
 MINIMAL_LSTM_MIN_DELTA = float(MINIMAL_LSTM_CFG.get("min_delta", 1e-4))
 MINIMAL_LSTM_TUNING_CFG = CONFIG["tuning"].get("minimal_lstm", {})
+MINIMAL_LSTM_PRUNER_CFG = MINIMAL_LSTM_TUNING_CFG.get("pruner", {})
+MINIMAL_LSTM_PRUNER_MIN_RESOURCE = int(MINIMAL_LSTM_PRUNER_CFG.get("min_resource", 5))
+MINIMAL_LSTM_PRUNER_REDUCTION_FACTOR = int(MINIMAL_LSTM_PRUNER_CFG.get("reduction_factor", 3))
+MINIMAL_LSTM_PRUNER_MIN_EARLY_STOPPING_RATE = int(MINIMAL_LSTM_PRUNER_CFG.get("min_early_stopping_rate", 0))
 MINIMAL_LSTM_N_TRIALS = int(CONFIG["tuning"].get("n_trials_minimal_lstm", 30))
 MINIMAL_LSTM_PRELOAD_TO_GPU = bool(MINIMAL_LSTM_CFG.get("preload_to_gpu", False))
 TIREX_CFG = CONFIG["models"].get("tirex", {})
@@ -121,6 +127,7 @@ def _run_lstm_training(
     max_epochs,
     patience,
     min_delta,
+    trial=None,
     checkpoint_path=None,
     history_csv_path=None,
 ):
@@ -167,6 +174,16 @@ def _run_lstm_training(
     best_val_loss, best_state, stale = np.inf, None, 0
     history_rows = []
 
+    def _save_history_if_requested():
+        if history_csv_path is None:
+            return
+        from pathlib import Path as _Path
+
+        history_path = _Path(history_csv_path)
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(history_rows).to_csv(history_path, index=False)
+        print(f"Saved history: {history_path}")
+
     for epoch in range(1, max_epochs + 1):
         model.train()
         train_loss, count = 0.0, 0
@@ -205,17 +222,17 @@ def _run_lstm_training(
             "batch_size": batch_size,
         })
 
+        if trial is not None:
+            trial.report(float(val_loss), step=epoch)
+            if trial.should_prune():
+                _save_history_if_requested()
+                raise optuna.exceptions.TrialPruned(f"Pruned at epoch {epoch} with val_loss={val_loss:.6f}")
+
         if stale >= patience:
             print(f"Early stopping at epoch {epoch} (patience={patience}, min_delta={min_delta})")
             break
 
-    if history_csv_path is not None:
-        from pathlib import Path as _Path
-
-        history_path = _Path(history_csv_path)
-        history_path.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(history_rows).to_csv(history_path, index=False)
-        print(f"Saved history: {history_path}")
+    _save_history_if_requested()
 
     if checkpoint_path is not None:
         from pathlib import Path as _Path
@@ -487,6 +504,7 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
             TrialProgressCallback(model_label="Hybrid CV/CTRV", total_trials=HYBRID_N_TRIALS),
         ],
     )
+    save_study_plots(study, diagnostics_dir / "optuna_plots", "hybrid_cv_ctrv")
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
     trials_df["model_key"] = "hybrid_cv_ctrv"
@@ -541,6 +559,7 @@ def run_kalman_optimization(data_dir, diagnostics_dir):
             TrialProgressCallback(model_label="Kalman", total_trials=KALMAN_N_TRIALS),
         ],
     )
+    save_study_plots(study, diagnostics_dir / "optuna_plots", "kalman")
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
     trials_df["model_key"] = "kalman"
@@ -590,12 +609,12 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
             TrialProgressCallback(model_label="CTRV EKF", total_trials=CTRV_EKF_N_TRIALS),
         ],
     )
+    save_study_plots(study, diagnostics_dir / "optuna_plots", "ctrv_ekf")
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
     trials_df["model_key"] = "ctrv_ekf"
     trials_df["model_label"] = "CTRV EKF"
     trials_df["sample_pct"] = TUNING_VALIDATION_PCT
-
     csv_path = diagnostics_dir / "tuning_ctrv_ekf_val.csv"
     trials_df.to_csv(csv_path, index=False)
 
@@ -642,11 +661,22 @@ def run_minimal_lstm_optimization(diagnostics_dir):
             max_epochs=MINIMAL_LSTM_MAX_EPOCHS,
             patience=MINIMAL_LSTM_PATIENCE,
             min_delta=MINIMAL_LSTM_MIN_DELTA,
+            trial=trial,
             history_csv_path=history_path,
         )
 
     sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=10, multivariate=False)
-    study = optuna.create_study(study_name="minimal_lstm_val_tpe", direction="minimize", sampler=sampler)
+    pruner = optuna.pruners.SuccessiveHalvingPruner(
+        min_resource=MINIMAL_LSTM_PRUNER_MIN_RESOURCE,
+        reduction_factor=MINIMAL_LSTM_PRUNER_REDUCTION_FACTOR,
+        min_early_stopping_rate=MINIMAL_LSTM_PRUNER_MIN_EARLY_STOPPING_RATE,
+    )
+    study = optuna.create_study(
+        study_name="minimal_lstm_val_tpe",
+        direction="minimize",
+        sampler=sampler,
+        pruner=pruner,
+    )
     study.optimize(
         objective,
         n_trials=MINIMAL_LSTM_N_TRIALS,
@@ -656,6 +686,10 @@ def run_minimal_lstm_optimization(diagnostics_dir):
             TrialProgressCallback(model_label="Minimal LSTM", total_trials=MINIMAL_LSTM_N_TRIALS),
         ],
     )
+    study_path = diagnostics_dir / "minimal_lstm_study.pkl"
+    joblib.dump(study, study_path)
+    print(f"Saved Optuna study: {study_path}")
+    save_study_plots(study, diagnostics_dir / "optuna_plots", "minimal_lstm")
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
     trials_df["model_key"] = "minimal_lstm"

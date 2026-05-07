@@ -508,6 +508,38 @@ def plot_convergence(df, model_label, output_path):
     plt.close(fig)
 
 
+def plot_minimal_lstm_results(df, best_params, best_rmse, model_label, output_path):
+    param_cols = {
+        "params_hidden_size": "hidden_size (units)",
+        "params_num_layers": "num_layers",
+        "params_dropout": "dropout",
+        "params_learning_rate": "learning_rate",
+        "params_batch_size": "batch_size",
+    }
+    available = {col: lbl for col, lbl in param_cols.items() if col in df.columns}
+    n = len(available)
+    fig, axes = plt.subplots(1, n, figsize=(4 * n, 5))
+    if n == 1:
+        axes = [axes]
+
+    for ax, (col, xlabel) in zip(axes, available.items()):
+        ax.scatter(df[col], df["value"], s=20, alpha=0.7, color="steelblue", label="All trials")
+        best_val = best_params.get(col.replace("params_", "best_"))
+        if best_val is not None:
+            ax.scatter([best_val], [best_rmse], color="crimson", marker="*", s=220, zorder=5,
+                       label=f"Best: {best_val}\nRMSE={best_rmse:.4f}")
+        ax.set_xlabel(xlabel, fontsize=9)
+        ax.set_ylabel("Validation Loss" if ax is axes[0] else "", fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8)
+
+    fig.suptitle(f"{model_label} - Hyperparameter Optimization", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    print(f"Plot saved to {output_path}")
+    plt.close(fig)
+
+
 def plot_tuning_results():
     if not tuning_diagnostics_dir.exists():
         print("[tuning] No tuning diagnostics directory found, skipping.")
@@ -596,6 +628,32 @@ def plot_tuning_results():
                 df=df,
                 best_params=best_params,
                 best_rmse=float(row["best_val_rmse"]),
+                model_label=model_label,
+                output_path=plot_path,
+            )
+        elif model_key == "minimal_lstm":
+            csv_path = tuning_diagnostics_dir / "tuning_minimal_lstm_val.csv"
+            if not csv_path.exists():
+                print(f"[tuning] {csv_path} not found, skipping Minimal LSTM.")
+                continue
+            df = pd.read_csv(csv_path)
+            plot_convergence(
+                df=df,
+                model_label=model_label,
+                output_path=plots_dir / "tuning_minimal_lstm_convergence.png",
+            )
+            plot_path = plots_dir / "tuning_minimal_lstm_val_plot.png"
+            best_params = {
+                "best_hidden_size": int(row["best_hidden_size"]),
+                "best_num_layers": int(row["best_num_layers"]),
+                "best_dropout": float(row["best_dropout"]),
+                "best_learning_rate": float(row["best_learning_rate"]),
+                "best_batch_size": int(row["best_batch_size"]),
+            }
+            plot_minimal_lstm_results(
+                df=df,
+                best_params=best_params,
+                best_rmse=float(row["best_val_loss"]),
                 model_label=model_label,
                 output_path=plot_path,
             )
