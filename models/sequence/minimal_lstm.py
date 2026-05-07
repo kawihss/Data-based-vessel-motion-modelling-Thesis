@@ -46,6 +46,7 @@ class MinimalLSTMModel(BaselineModel):
                 raise KeyError(f"Checkpoint missing required key: {key}")
 
         self.pred_len = int(ckpt["pred_len"])
+        self.feature_columns = tuple(ckpt.get("feature_columns", FEATURE_COLUMNS))
         self.model = MinimalLSTMNet(
             input_size=int(ckpt["input_size"]),
             hidden_size=int(ckpt["hidden_size"]),
@@ -85,7 +86,7 @@ class MinimalLSTMModel(BaselineModel):
         if len(context_df) < CONTEXT_LEN:
             raise ValueError(f"Context too short: {len(context_df)} < {CONTEXT_LEN}")
         x = torch.from_numpy(
-            context_df.loc[:, FEATURE_COLUMNS].to_numpy(dtype=np.float32)[-CONTEXT_LEN:]
+            context_df.loc[:, self.feature_columns].to_numpy(dtype=np.float32)[-CONTEXT_LEN:]
         ).unsqueeze(0).to(self.device)
         with torch.no_grad():
             pred_norm = self.model(x).squeeze(0).cpu().numpy().astype(float)

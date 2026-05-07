@@ -1,12 +1,12 @@
 run:
-  name: lstm_testhalfing001
-  description: testing üplots
+  name: lstm_30_full_categorical # ja war falsch ist after, leider überschrieben
+  description: finding the best hp configuration
   seed: 42
-  sample_pct: 1 #of 100
+  sample_pct: 100 #of 100
 
 sampling:
-  tuning_validation_pct: 1 #of 100
-  evaluation_pct: 1 #of 100
+  tuning_validation_pct: 100 #of 100
+  evaluation_pct: 100 #of 100
 
 paths:
   baseline_root: output/08_baseline_results
@@ -74,7 +74,16 @@ tuning:
     dropout_max: 0.4
     learning_rate_min: 0.0001
     learning_rate_max: 0.01
-    batch_size: [128, 256, 512, 1024] # best was 512, so added 1024 to the search space
+    batch_size: [128, 256, 512]
+    feature_sets:
+      - [dx_norm, dy_norm]
+      - [dx_norm, dy_norm, sog_norm]
+      - [dx_norm, dy_norm, rot_norm]
+      - [dx_norm, dy_norm, cog_sin_norm, cog_cos_norm]
+      - [dx_norm, dy_norm, sog_norm, rot_norm]
+      - [dx_norm, dy_norm, sog_norm, cog_sin_norm, cog_cos_norm]
+      - [dx_norm, dy_norm, rot_norm, cog_sin_norm, cog_cos_norm]
+      - [dx_norm, dy_norm, sog_norm, rot_norm, cog_sin_norm, cog_cos_norm]
     pruner:
       min_resource: 8
       reduction_factor: 2

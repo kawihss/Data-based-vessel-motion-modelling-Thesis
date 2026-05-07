@@ -73,7 +73,7 @@ TUNING_VALIDATION_PCT = int(get_sampling_value(CONFIG, "tuning_validation_pct"))
 np.random.seed(SEED)
 
 
-def _build_lstm_samples(split, sample_pct=100, seed=SEED):
+def _build_lstm_samples(split, feature_columns, sample_pct=100, seed=SEED):
     data_dir = PROJECT_ROOT / CONFIG["data"]["parquet_dir"]
     context_filter = CONFIG["data"].get("context_filter_tuning")
     files = _resolve_files(data_dir, split, context_filter)
@@ -87,7 +87,7 @@ def _build_lstm_samples(split, sample_pct=100, seed=SEED):
         for context_df, pred_df in _iter_track_groups(df):
             if len(context_df) < CONTEXT_LEN or len(pred_df) < PRED_LEN:
                 continue
-            x_list.append(context_df.loc[:, FEATURE_COLUMNS].to_numpy(dtype=np.float32)[-CONTEXT_LEN:])
+            x_list.append(context_df.loc[:, feature_columns].to_numpy(dtype=np.float32)[-CONTEXT_LEN:])
             y_list.append(pred_df.loc[:, TARGET_COLUMNS].to_numpy(dtype=np.float32)[:PRED_LEN])
     if not x_list:
         raise RuntimeError(f"No samples for split '{split}'")
@@ -119,6 +119,7 @@ def _lstm_eval_loss(model, loader, criterion, device):
 
 def _run_lstm_training(
     params,
+    feature_columns,
     x_train,
     y_train,
     x_val,
@@ -151,7 +152,7 @@ def _run_lstm_training(
             normalized[new_key] = value
         return normalized
 
-    model = MinimalLSTMNet(len(FEATURE_COLUMNS), hidden_size, num_layers, dropout, PRED_LEN).to(device)
+    model = MinimalLSTMNet(len(feature_columns), hidden_size, num_layers, dropout, PRED_LEN).to(device)
     model = torch.compile(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.MSELoss()
@@ -215,6 +216,7 @@ def _run_lstm_training(
             "train_loss": float(train_loss),
             "val_loss": float(val_loss),
             "best_val_loss_so_far": float(best_val_loss),
+            "feature_columns": "|".join(feature_columns),
             "hidden_size": hidden_size,
             "num_layers": num_layers,
             "dropout": dropout,
@@ -241,13 +243,13 @@ def _run_lstm_training(
             "state_dict": best_state,
             "pred_len": PRED_LEN,
             "context_len": CONTEXT_LEN,
-            "input_size": len(FEATURE_COLUMNS),
+            "input_size": len(feature_columns),
             "hidden_size": hidden_size,
             "num_layers": num_layers,
             "dropout": dropout,
             "learning_rate": lr,
             "batch_size": batch_size,
-            "feature_columns": list(FEATURE_COLUMNS),
+            "feature_columns": list(feature_columns),
             "target_columns": list(TARGET_COLUMNS),
             "best_val_loss": float(best_val_loss),
         }, checkpoint_path)
@@ -638,14 +640,25 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
 
 def run_minimal_lstm_optimization(diagnostics_dir):
     tuning_cfg = MINIMAL_LSTM_TUNING_CFG
-
-    x_train, y_train = _build_lstm_samples("train", sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
-    x_val, y_val = _build_lstm_samples("val", sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
-    print(f"Minimal LSTM tuning: {x_train.shape[0]} train samples, {x_val.shape[0]} val samples")
+    feature_sets = [tuple(fs) for fs in tuning_cfg["feature_sets"]]
+    feature_set_labels = ["|".join(fs) for fs in feature_sets]
+    feature_set_lookup = dict(zip(feature_set_labels, feature_sets))
+    data_by_feature_set = {}
+    for feature_set, feature_set_label in zip(feature_sets, feature_set_labels):
+        x_train, y_train = _build_lstm_samples("train", feature_set, sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
+        x_val, y_val = _build_lstm_samples("val", feature_set, sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
+        data_by_feature_set[feature_set_label] = (x_train, y_train, x_val, y_val)
+        print(
+            f"Minimal LSTM tuning ({feature_set_label}): "
+            f"{x_train.shape[0]} train samples, {x_val.shape[0]} val samples"
+        )
 
     n_gpus = torch.cuda.device_count() if MINIMAL_LSTM_DEVICE.startswith("cuda") else 0
 
     def objective(trial):
+        feature_set_label = trial.suggest_categorical("feature_set", feature_set_labels)
+        feature_columns = feature_set_lookup[feature_set_label]
+        x_train, y_train, x_val, y_val = data_by_feature_set[feature_set_label]
         params = {
             "hidden_size": trial.suggest_categorical("hidden_size", tuning_cfg["hidden_size"]),
             "num_layers": trial.suggest_categorical("num_layers", tuning_cfg["num_layers"]),
@@ -656,7 +669,7 @@ def run_minimal_lstm_optimization(diagnostics_dir):
         device_str = f"cuda:{trial.number % n_gpus}" if n_gpus > 1 else MINIMAL_LSTM_DEVICE
         history_path = diagnostics_dir / "minimal_lstm_history" / f"minimal_lstm_trial_{trial.number:04d}.csv"
         return _run_lstm_training(
-            params, x_train, y_train, x_val, y_val,
+            params, feature_columns, x_train, y_train, x_val, y_val,
             device_str=device_str,
             max_epochs=MINIMAL_LSTM_MAX_EPOCHS,
             patience=MINIMAL_LSTM_PATIENCE,
@@ -699,8 +712,10 @@ def run_minimal_lstm_optimization(diagnostics_dir):
     trials_df.to_csv(csv_path, index=False)
 
     best = study.best_trial
-    _run_lstm_training(
-        best.params, x_train, y_train, x_val, y_val,
+    best_feature_columns = feature_set_lookup[best.params["feature_set"]]
+    best_x_train, best_y_train, best_x_val, best_y_val = data_by_feature_set[best.params["feature_set"]]
+    _run_lstm_training( # retrain best model on full training set 
+        best.params, best_feature_columns, best_x_train, best_y_train, best_x_val, best_y_val,
         device_str=MINIMAL_LSTM_DEVICE,
         max_epochs=MINIMAL_LSTM_MAX_EPOCHS,
         patience=MINIMAL_LSTM_PATIENCE,
@@ -717,6 +732,7 @@ def run_minimal_lstm_optimization(diagnostics_dir):
         "best_dropout": float(best.params["dropout"]),
         "best_learning_rate": float(best.params["learning_rate"]),
         "best_batch_size": int(best.params["batch_size"]),
+        "best_feature_set": str(best.params["feature_set"]),
         "best_val_loss": float(best.value),
         "trials_csv": str(csv_path),
         "sample_pct": TUNING_VALIDATION_PCT,
