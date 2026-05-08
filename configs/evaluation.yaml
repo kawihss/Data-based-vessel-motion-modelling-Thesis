@@ -1,5 +1,5 @@
 run:
-  name: lstm_30_full_categorical # ja war falsch ist after, leider überschrieben
+  name: lstm_river_river_100 # ja war falsch ist after, leider überschrieben
   description: finding the best hp configuration
   seed: 42
   sample_pct: 100 #of 100
@@ -76,13 +76,13 @@ tuning:
     learning_rate_max: 0.01
     batch_size: [128, 256, 512]
     feature_sets:
-      - [dx_norm, dy_norm]
-      - [dx_norm, dy_norm, sog_norm]
-      - [dx_norm, dy_norm, rot_norm]
-      - [dx_norm, dy_norm, cog_sin_norm, cog_cos_norm]
-      - [dx_norm, dy_norm, sog_norm, rot_norm]
-      - [dx_norm, dy_norm, sog_norm, cog_sin_norm, cog_cos_norm]
-      - [dx_norm, dy_norm, rot_norm, cog_sin_norm, cog_cos_norm]
+      #- [dx_norm, dy_norm]
+      #- [dx_norm, dy_norm, sog_norm]
+      #- [dx_norm, dy_norm, rot_norm]
+      #- [dx_norm, dy_norm, cog_sin_norm, cog_cos_norm]
+      #- [dx_norm, dy_norm, sog_norm, rot_norm]
+      #- [dx_norm, dy_norm, sog_norm, cog_sin_norm, cog_cos_norm]
+      #- [dx_norm, dy_norm, rot_norm, cog_sin_norm, cog_cos_norm]
       - [dx_norm, dy_norm, sog_norm, rot_norm, cog_sin_norm, cog_cos_norm]
     pruner:
       min_resource: 8
