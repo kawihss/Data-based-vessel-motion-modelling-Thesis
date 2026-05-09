@@ -1,12 +1,8 @@
 from __future__ import annotations
-
 import numpy as np
 from pathlib import Path
-
 import joblib
-
 from models.base_model import BaselineModel
-
 import os
 os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9"
 os.environ["CUDA_LIB"] = "/usr/local/cuda-12.6/targets/x86_64-linux/lib"
@@ -45,7 +41,7 @@ class TirexLSTMModel(BaselineModel):
         scaler_path=None,
         batch_size=1,
     ):
-        super().__init__("TiRexLSTM")
+        super().__init__("TiRexLSTM") # call base constructor 
         self.velocity_steps = int(velocity_steps)
         self.model_name = str(model_name)
         self.device = device
@@ -55,7 +51,7 @@ class TirexLSTMModel(BaselineModel):
         self.batch_size = int(batch_size)
 
     def _get_model(self):
-   
+        #retreive from cache if available, otherwise load and cache
         cache_key = (self.model_name, self.device, self.backend, self.compile_model)
         model = self._MODEL_CACHE.get(cache_key)
         if model is None:
@@ -98,7 +94,7 @@ class TirexLSTMModel(BaselineModel):
     def _forecast_univariate_channels(self, x_ctx, y_ctx, n_pred_steps):
         model = self._get_model()
         context = np.stack([x_ctx, y_ctx], axis=0).astype(np.float32)
-        _, mean = model.forecast(
+        _, mean = model.forecast( # this is where the actual forecasting happens (only taking the mean here, no quantiles)
             context=context,
             output_type="numpy",
             prediction_length=int(n_pred_steps),
@@ -116,6 +112,8 @@ class TirexLSTMModel(BaselineModel):
         return pred_dx, pred_dy
 
     def _predict_from_series(self, dx_norm, dy_norm, n_pred_steps):
+        #calls the univariate forecasting and then denormalizes the results
+
         if n_pred_steps <= 0:
             return np.empty((0, 2), dtype=float)
 
@@ -136,15 +134,22 @@ class TirexLSTMModel(BaselineModel):
         return np.column_stack([pred_dx, pred_dy])
 
     def predict_quantiles(self, context_df, n_pred_steps):
+        #pred
         n_pred_steps = int(n_pred_steps)
         if n_pred_steps <= 0:
-            return {float(q): np.empty((0, 2), dtype=float) for q in _TIREX_QUANTILES}
+            result = {float(q): np.empty((0, 2), dtype=float) for q in _TIREX_QUANTILES}
+            result[0.5] = np.empty((0, 2), dtype=float)
+            print("Warning: Non-positive n_pred_steps provided to predict_quantiles; returning empty arrays for all quantiles.")
+            return result
 
         ctx = context_df.sort_values("t_utc") if "t_utc" in context_df.columns else context_df
         dx_norm = np.asarray(ctx["dx_norm"].values, dtype=float).reshape(-1)
         dy_norm = np.asarray(ctx["dy_norm"].values, dtype=float).reshape(-1)
         if dx_norm.size == 0 or dy_norm.size == 0:
-            return {float(q): np.zeros((n_pred_steps, 2), dtype=float) for q in _TIREX_QUANTILES}
+            result = {float(q): np.zeros((n_pred_steps, 2), dtype=float) for q in _TIREX_QUANTILES}
+            result[0.5] = np.zeros((n_pred_steps, 2), dtype=float)
+            print("Warning: Empty context provided to TiRexLSTMModel; returning zeros for all quantiles.")
+            return result
 
         window = max(1, min(int(self.velocity_steps), len(dx_norm), len(dy_norm)))
         context = np.stack([dx_norm[-window:], dy_norm[-window:]], axis=0).astype(np.float32)
@@ -156,6 +161,7 @@ class TirexLSTMModel(BaselineModel):
         )
 
         quantiles = np.asarray(quantiles, dtype=float)
+        mean = np.asarray(mean, dtype=float)
 
         result = {}
         for quantile in _TIREX_QUANTILES:
@@ -164,6 +170,8 @@ class TirexLSTMModel(BaselineModel):
             dy_series = quantiles[1, :n_pred_steps, q_idx]
             pred_dx, pred_dy = self._denormalize_displacements(dx_series, dy_series)
             result[float(quantile)] = np.column_stack([pred_dx, pred_dy])
+        mean_dx, mean_dy = self._denormalize_displacements(mean[0, :n_pred_steps], mean[1, :n_pred_steps])
+        result[0.5] = np.column_stack([mean_dx, mean_dy])
         return result
 
     def predict_batch_from_cached_tracks(self, tracks, n_pred_steps):

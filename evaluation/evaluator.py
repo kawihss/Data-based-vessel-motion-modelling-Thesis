@@ -187,7 +187,10 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
             last_y = context_df['y'].iloc[-1]
 
             quantile_predictions = model.predict_quantiles(context_df, n_pred_steps) if hasattr(model, 'predict_quantiles') else None
-            displacements = model.predict(context_df, n_pred_steps)
+            try:
+                displacements = np.asarray(quantile_predictions[0.5], dtype=float)
+            except Exception:
+                displacements = model.predict(context_df, n_pred_steps)
             pred_positions = reconstruct_positions(last_x, last_y, displacements)
             lower_positions = reconstruct_positions(last_x, last_y, quantile_predictions[0.1]) if quantile_predictions is not None else None
             median_positions = pred_positions

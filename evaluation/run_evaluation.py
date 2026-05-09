@@ -333,7 +333,10 @@ if __name__ == "__main__":
                 last_y = context_df['y'].iloc[-1]
 
                 quantile_predictions = model.predict_quantiles(context_df, n_pred_steps) if hasattr(model, 'predict_quantiles') else None
-                displacements = model.predict(context_df, n_pred_steps)
+                try:
+                    displacements = np.asarray(quantile_predictions[0.5], dtype=float)
+                except Exception:
+                    displacements = model.predict(context_df, n_pred_steps)
                 pred_positions = reconstruct_positions(last_x, last_y, displacements)
                 true_positions = pred_df[['x', 'y']].values
                 true_displacements = None
