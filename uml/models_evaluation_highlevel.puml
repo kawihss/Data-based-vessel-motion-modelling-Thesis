@@ -10,45 +10,25 @@ skinparam packageBorderColor #6E8093
 skinparam nodesep 70
 skinparam ranksep 90
 
-title Motion-Models: Models + Tuning + Evaluation 
+title Motion-Models: Evaluation Workflow
 
 package "Config + Inputs" {
   [configs/evaluation.yaml] as cfg
   [output/07_parquet] as parquet
 }
 
-package "Model Layer" {
-  [models/base_model.py\nBaselineModel interface] as base
+[Model implementations\nsee models_highlevel.puml] as models
 
-  package "models/kinematic.py" {
-    [ConstantVelocityModel] as cv
-    [ConstantTurnRateVelocityModel] as ctrv
-    [ConstantTurnRateVelocityArcModel] as ctrv_arc
-    [HybridCVCTRVModel] as hybrid
-  }
-
-  package "models/filters.py" {
-    [KalmanFilter] as kf
-    [CTRVExtendedKalmanFilter] as ekf
-  }
-
-  package "models/sequence" {
-    [TirexLSTMModel] as tirex
-    [MinimalLSTMModel] as minimal
-    [Chronos2ZeroShotModel] as chronos
-  }
+package "Execution Scripts" {
+  [evaluation/tune_hyperparams.py\nvalidation split + Optuna/grid] as tune
+  [evaluation/run_evaluation.py\ntest split + diagnostics] as run_eval
+  [evaluation/plot_evaluation.py\nfigures from CSV outputs] as plot_eval
 }
 
 package "Evaluation Layer" {
   [evaluation/evaluator.py\nfile resolve + group + rollout] as evaluator
   [evaluation/metrics.py\nADE/FDE/RMSE + quantile metrics] as metrics
   [evaluation/runtime_config.py\nrun paths + metadata] as runtime
-}
-
-package "Execution Scripts" {
-  [evaluation/tune_hyperparams.py\nvalidation split + Optuna/grid] as tune
-  [evaluation/run_evaluation.py\ntest split + diagnostics] as run_eval
-  [evaluation/plot_evaluation.py\nfigures from CSV outputs] as plot_eval
 }
 
 [output/08_baseline_results/runs/{run.name}\n(tuning + diagnostics + model_output + plots)] as run_artifacts
@@ -59,55 +39,18 @@ cfg --> run_eval
 parquet --> tune
 parquet --> run_eval
 
-base <|-- cv
-base <|-- ctrv
-base <|-- ctrv_arc
-base <|-- hybrid
-base <|-- kf
-base <|-- ekf
-base <|-- tirex
-base <|-- minimal
-base <|-- chronos
-
 tune --> evaluator
 tune --> metrics
-tune --> cv
-tune --> ctrv
-tune --> ctrv_arc
-tune --> hybrid
-tune --> kf
-tune --> ekf
-tune --> tirex
-tune --> minimal
-
+tune --> models
 tune --> run_artifacts
 
 run_eval --> evaluator
 run_eval --> metrics
-run_eval --> cv
-run_eval --> ctrv
-run_eval --> ctrv_arc
-run_eval --> hybrid
-run_eval --> kf
-run_eval --> ekf
-run_eval --> tirex
-run_eval --> minimal
-run_eval --> chronos
+run_eval --> models
 
 run_artifacts --> run_eval : tuned params
 run_eval --> run_artifacts
 
 plot_eval --> run_artifacts
-
-note right of tune
-Workflow:
-1) tune on validation
-2) save best params CSV
-end note
-
-note right of run_eval
-Final reporting should run on test split.
-Chronos2 is zero-shot (no tuning CSV needed).
-end note
 
 @enduml

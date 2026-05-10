@@ -76,16 +76,4 @@ step07 --> out07
 
 out05 --> step06
 
-note bottom of step04
-Windowing policy:
-- context: 5 min
-- prediction: 5 min
-- default stride: 1 min
-end note
-
-note right of out07
-Primary handoff to evaluation
-and model development.
-end note
-
 @enduml
