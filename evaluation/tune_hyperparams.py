@@ -28,7 +28,7 @@ from evaluation.runtime_config import load_runtime_config, resolve_run_paths, up
 from evaluation.plot_optuna import save_study_plots
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CONFIG = load_runtime_config(PROJECT_ROOT)
+CONFIG = load_runtime_config(PROJECT_ROOT) # load yaml into CONFIG dict
 
 CONTEXT_FILTER_TUNING = CONFIG["data"]["context_filter_tuning"]
 RUN_CV = bool(CONFIG["models"]["cv"])
@@ -74,11 +74,14 @@ np.random.seed(SEED)
 
 
 def _build_lstm_samples(split, feature_columns, sample_pct=100, seed=SEED):
+    #builds training/validation samples for the MinimalLSTMModel from parquet files, 
+    # applying context filtering and sampling as specified in the config. 
+    
     data_dir = PROJECT_ROOT / CONFIG["data"]["parquet_dir"]
     context_filter = CONFIG["data"].get("context_filter_tuning")
     files = _resolve_files(data_dir, split, context_filter)
     if sample_pct < 100:
-        rng = np.random.default_rng(seed)
+        rng = np.random.default_rng(seed) # not stratisfied, just for testing, full sets used in thesis (except for Feature selection, see thesis text)
         n = max(1, int(len(files) * sample_pct / 100))
         files = rng.choice(files, size=n, replace=False).tolist()
     x_list, y_list = [], []
@@ -89,12 +92,11 @@ def _build_lstm_samples(split, feature_columns, sample_pct=100, seed=SEED):
                 continue
             x_list.append(context_df.loc[:, feature_columns].to_numpy(dtype=np.float32)[-CONTEXT_LEN:])
             y_list.append(pred_df.loc[:, TARGET_COLUMNS].to_numpy(dtype=np.float32)[:PRED_LEN])
-    if not x_list:
-        raise RuntimeError(f"No samples for split '{split}'")
     return np.stack(x_list), np.stack(y_list)
 
 
 def _make_lstm_tensors(x_train, y_train, x_val, y_val, device, preload_to_gpu=False):
+    #build "tensors" to use GPU and preload for faster training if possible
     x_train_t = torch.from_numpy(x_train)
     y_train_t = torch.from_numpy(y_train)
     x_val_t = torch.from_numpy(x_val)
@@ -108,11 +110,12 @@ def _make_lstm_tensors(x_train, y_train, x_val, y_val, device, preload_to_gpu=Fa
 
 
 def _lstm_eval_loss(model, loader, criterion, device):
-    model.eval()
+    model.eval() # turn offd ropout, batchnorm, etc for evaluation
     total, count = 0.0, 0
     with torch.no_grad():
         for x_b, y_b in loader:
-            total += criterion(model(x_b.to(device)), y_b.to(device)).item() * len(x_b)
+            # add MSE of forward pass multiplied by batch size to total loss 
+            total += criterion(model(x_b.to(device)), y_b.to(device)).item() * len(x_b) 
             count += len(x_b)
     return total / count
 
@@ -140,6 +143,7 @@ def _run_lstm_training(
     device = torch.device(device_str)
 
     def _plain_state_dict(m):
+        #remove prefices from keys
         state = m.state_dict()
         normalized = {}
         for key, value in state.items():
@@ -154,7 +158,7 @@ def _run_lstm_training(
 
     model = MinimalLSTMNet(len(feature_columns), hidden_size, num_layers, dropout, PRED_LEN).to(device)
     model = torch.compile(model)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr) # adam
     criterion = nn.MSELoss()
     x_train_t, y_train_t, x_val_t, y_val_t, pin_memory, preloaded_to_gpu = _make_lstm_tensors(
         x_train, y_train, x_val, y_val, device, preload_to_gpu=MINIMAL_LSTM_PRELOAD_TO_GPU
@@ -162,13 +166,13 @@ def _run_lstm_training(
     train_loader = DataLoader(
         TensorDataset(x_train_t, y_train_t),
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=True, # avoid overfitting to sample order
         pin_memory=pin_memory,
     )
     val_loader = DataLoader(
         TensorDataset(x_val_t, y_val_t),
         batch_size=batch_size,
-        shuffle=False,
+        shuffle=False, # consistency
         pin_memory=pin_memory,
     )
 
@@ -277,6 +281,7 @@ def make_hybrid_objective(cached_tracks, max_velocity_steps, rot_threshold_upper
 
 
 def make_kalman_objective(cached_tracks):
+    # creates an Optuna objective function for tuning the 5 hyperparameters of the KalmanFilter
     def objective(trial):
         q_pos = trial.suggest_float("q_pos", 1e-3, 1e3, log=True)
         q_vel = trial.suggest_float("q_vel", 1e-5, 1e1, log=True)
@@ -298,6 +303,7 @@ def make_kalman_objective(cached_tracks):
 
 
 def make_ctrv_ekf_objective(cached_tracks):
+    # creates an Optuna objective function for tuning the 7 hyperparameters of the CTRVExtendedKalmanFilter
     max_ctx = max(len(track['x_ctx']) for track in cached_tracks)
 
     def objective(trial):
@@ -325,7 +331,7 @@ def make_ctrv_ekf_objective(cached_tracks):
             metrics = evaluate_model_cached_numpy(model, cached_tracks)
             rmse = float(metrics["RMSE"])
             elapsed = time.perf_counter() - t0
-            if elapsed > 15:
+            if elapsed > 500:
                 print(f"[CTRV EKF] trial {trial.number} slow: {elapsed:.1f}s  RMSE={rmse:.4f}")
             if not np.isfinite(rmse):
                 return 1e12
@@ -375,7 +381,7 @@ class TrialProgressCallback:
             pass
 
         print(
-            f"[Trial] {self.model_label}: {completed}/{self.total_trials} "
+            f"Trial {self.model_label}: {completed}/{self.total_trials} "
             f"(trial #{trial.number}) value={value_txt} best={best_txt}"
         )
 
@@ -404,6 +410,8 @@ def _load_existing_best_rows(diagnostics_dir):
 
 def run_grid_search_for_velocity_model(model_key, model_label, model_cls, data_dir, diagnostics_dir, model_kwargs=None):
     # Full grid search over velocity_steps from 1..max_velocity_steps.
+
+    #chache tracks first
     cached_tracks = load_tracks_cached_numpy(
         data_dir,
         split='val',
@@ -537,6 +545,12 @@ def run_hybrid_optimization(data_dir, diagnostics_dir):
 
 
 def run_kalman_optimization(data_dir, diagnostics_dir):
+    #1. Load validation tracks into memory
+    #2. Create Optuna study and optimize the objective function with TPE, early stopping
+    #   and multivariate sampling
+    #3. Save all trials and best parameters to CSV
+    #4. Return best parameters for summary table
+
     cached_tracks = load_tracks_cached_numpy(
         data_dir,
         split='val',
@@ -587,6 +601,12 @@ def run_kalman_optimization(data_dir, diagnostics_dir):
 
 
 def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
+    #1. Load validation tracks into memory
+    #2. Create Optuna study and optimize the objective function with TPE, early stopping
+    #   and multivariate sampling
+    #3. Save all trials and best parameters to CSV
+    #4. Return best parameters for summary table
+
     cached_tracks = load_tracks_cached_numpy(
         data_dir,
         split='val',
@@ -639,6 +659,13 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
 
 
 def run_minimal_lstm_optimization(diagnostics_dir):
+    #1. Build training and validation samples for each feature set specified in the config, applying context filtering and sampling as needed
+    #2. Create Optuna study and optimize the objective function with TPE and early stopping
+    #3. Save all trials and best parameters to CSV
+    #4. Retrain the best model on the full training set and save checkpoint
+    #5. Return best parameters for summary table
+
+
     tuning_cfg = MINIMAL_LSTM_TUNING_CFG
     feature_sets = [tuple(fs) for fs in tuning_cfg["feature_sets"]]
     feature_set_labels = ["|".join(fs) for fs in feature_sets]
@@ -653,7 +680,7 @@ def run_minimal_lstm_optimization(diagnostics_dir):
             f"{x_train.shape[0]} train samples, {x_val.shape[0]} val samples"
         )
 
-    n_gpus = torch.cuda.device_count() if MINIMAL_LSTM_DEVICE.startswith("cuda") else 0
+    n_gpus = torch.cuda.device_count() if MINIMAL_LSTM_DEVICE.startswith("cuda") else 0 # use multiple GPUs if available
 
     def objective(trial):
         feature_set_label = trial.suggest_categorical("feature_set", feature_set_labels)
@@ -781,11 +808,13 @@ def _run_ctrv_ekf_job(result_queue, data_dir, diagnostics_dir):
 
 
 if __name__ == "__main__":
-    # 1. Set up paths and output directories
-    # 2. Launch CV and CTRV tuning as parallel processes
-    # 3. Wait for both, collect results, save intermediate best-params CSV
-    # 4. Run hybrid tuning sequentially (needs CV/CTRV seeds from step 3)
-    # 5. Write final best-params and all-trials CSVs
+    # 1. Set up run paths and output directories.
+    # 2. Build selected model jobs from config flags.
+    # 3. Run standard jobs (CV/CTRV/CTRV Arc/TiRex + optional Kalman/CTRV-EKF) in parallel.
+    # 4. Collect per-job results and write/update tuning_best_params_val.csv.
+    # 5. Run Hybrid sequentially (depends on CV/CTRV seed values from saved best params).
+    # 6. Run Minimal LSTM tuning/retrain (single-process) if enabled.
+    # 7. Save final summary tables, run metadata, and latest-run pointer.
     import multiprocessing as mp
 
     run_paths = resolve_run_paths(PROJECT_ROOT, CONFIG, create=True)

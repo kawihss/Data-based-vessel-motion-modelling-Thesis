@@ -14,6 +14,8 @@ PRED_LEN = 10
 FEATURE_COLUMNS = ("dx_norm", "dy_norm")
 TARGET_COLUMNS = ("dx_norm", "dy_norm")
 
+#called "MinimalLSTM" because it's a very minimal implementation of an LSTM-based model,
+# no autoregresive decoding, linear head
 
 class MinimalLSTMNet(nn.Module):
     def __init__(self, input_size: int, hidden_size: int, num_layers: int, dropout: float, pred_len: int):
@@ -28,9 +30,9 @@ class MinimalLSTMNet(nn.Module):
         )
         self.head = nn.Linear(hidden_size, pred_len * 2)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if x.ndim != 3:
-            raise ValueError(f"Expected 3D tensor [batch, time, features], got shape {tuple(x.shape)}")
+    def forward(self, x: torch.Tensor) -> torch.Tensor: # forward pass
+        #hidden_n[-1] is the last layer's hidden state 
+        # fullk horizon prediction is made in one shot from the last hidden state via the linear head; no autoregressive decoding
         _, (hidden_n, _) = self.lstm(x)
         return self.head(hidden_n[-1]).reshape(-1, self.pred_len, 2)
 
@@ -40,11 +42,8 @@ class MinimalLSTMModel(BaselineModel):
         super().__init__("MinimalLSTM")
         self.device = torch.device(device)
 
-        ckpt = torch.load(Path(checkpoint_path), map_location=self.device)
-        for key in ("state_dict", "pred_len", "input_size", "hidden_size", "num_layers", "dropout"):
-            if key not in ckpt:
-                raise KeyError(f"Checkpoint missing required key: {key}")
-
+        ckpt = torch.load(Path(checkpoint_path), map_location=self.device) # load trained model checkpoint (to pass it to run_evaluation.py)
+     
         self.pred_len = int(ckpt["pred_len"])
         self.feature_columns = tuple(ckpt.get("feature_columns", FEATURE_COLUMNS))
         self.model = MinimalLSTMNet(
@@ -66,6 +65,7 @@ class MinimalLSTMModel(BaselineModel):
 
     @staticmethod
     def _normalize_state_dict_keys(state_dict):
+        #remove wrappers introduced by torch.compile and DataParallel to ensure compatibility when loading the state dict
         normalized = {}
         for key, value in state_dict.items():
             new_key = key
@@ -79,15 +79,10 @@ class MinimalLSTMModel(BaselineModel):
         return normalized
 
     def predict(self, context_df, n_pred_steps):
-        if int(n_pred_steps) != self.pred_len:
-            raise ValueError(f"n_pred_steps must equal checkpoint pred_len={self.pred_len}, got {n_pred_steps}")
-        if "t_utc" in context_df.columns:
-            context_df = context_df.sort_values("t_utc")
-        if len(context_df) < CONTEXT_LEN:
-            raise ValueError(f"Context too short: {len(context_df)} < {CONTEXT_LEN}")
+        #prepare input tensor from context_df, run through model, and denormalize the predictions to return in original scale
         x = torch.from_numpy(
             context_df.loc[:, self.feature_columns].to_numpy(dtype=np.float32)[-CONTEXT_LEN:]
-        ).unsqueeze(0).to(self.device)
+        ).unsqueeze(0).to(self.device) 
         with torch.no_grad():
             pred_norm = self.model(x).squeeze(0).cpu().numpy().astype(float)
         dx = pred_norm[:, 0] * self.dx_scale + self.dx_mean

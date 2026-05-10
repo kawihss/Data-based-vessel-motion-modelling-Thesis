@@ -1,5 +1,5 @@
 run:
-  name: foundation_harbour_harbour_100 
+  name: foundation_full_full_100
   description: thesis run
   seed: 42
   sample_pct: 100 #of 100
@@ -14,8 +14,8 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: harbour # null, not none
-  context_filter_evaluation: harbour # null
+  context_filter_tuning: null # null, not none
+  context_filter_evaluation: null # null
 
 
 evaluation:

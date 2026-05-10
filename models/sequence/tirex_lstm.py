@@ -134,22 +134,14 @@ class TirexLSTMModel(BaselineModel):
         return np.column_stack([pred_dx, pred_dy])
 
     def predict_quantiles(self, context_df, n_pred_steps):
-        #pred
+        #predict and denormalize quantiles
         n_pred_steps = int(n_pred_steps)
-        if n_pred_steps <= 0:
-            result = {float(q): np.empty((0, 2), dtype=float) for q in _TIREX_QUANTILES}
-            result[0.5] = np.empty((0, 2), dtype=float)
-            print("Warning: Non-positive n_pred_steps provided to predict_quantiles; returning empty arrays for all quantiles.")
-            return result
+       
 
         ctx = context_df.sort_values("t_utc") if "t_utc" in context_df.columns else context_df
         dx_norm = np.asarray(ctx["dx_norm"].values, dtype=float).reshape(-1)
         dy_norm = np.asarray(ctx["dy_norm"].values, dtype=float).reshape(-1)
-        if dx_norm.size == 0 or dy_norm.size == 0:
-            result = {float(q): np.zeros((n_pred_steps, 2), dtype=float) for q in _TIREX_QUANTILES}
-            result[0.5] = np.zeros((n_pred_steps, 2), dtype=float)
-            print("Warning: Empty context provided to TiRexLSTMModel; returning zeros for all quantiles.")
-            return result
+     
 
         window = max(1, min(int(self.velocity_steps), len(dx_norm), len(dy_norm)))
         context = np.stack([dx_norm[-window:], dy_norm[-window:]], axis=0).astype(np.float32)
@@ -175,6 +167,10 @@ class TirexLSTMModel(BaselineModel):
         return result
 
     def predict_batch_from_cached_tracks(self, tracks, n_pred_steps):
+        #used during tuning
+        #batch prediction for multiple tracks
+        #each track's context is processed and then all are predicted in one call to the model
+
         model = self._get_model()
         contexts = []
         for track in tracks:
@@ -184,16 +180,18 @@ class TirexLSTMModel(BaselineModel):
             contexts.append(dx_norm[-window:].astype(np.float32))
             contexts.append(dy_norm[-window:].astype(np.float32))
 
-        # one forecast call for all tracks; channels are interleaved → (B*2, n_pred_steps)
+        # one forecast call for all tracks; channels are interleaved 
         _, means = model.forecast(context=contexts, output_type="numpy", prediction_length=int(n_pred_steps))
         means = np.asarray(means, dtype=float)
 
-        return [
+        return [        #results are denormalized and returned as a list of arrays (one per track)
+
             np.column_stack(self._denormalize_displacements(means[i * 2, :n_pred_steps], means[i * 2 + 1, :n_pred_steps]))
             for i in range(len(tracks))
         ]
 
     def predict_from_cached_track(self, track, n_pred_steps):
+        # dict input variant; called from evaluator.py when pre-cached track dicts are available
         return self._predict_from_series(
             track["dx_norm_ctx"],
             track["dy_norm_ctx"],
@@ -201,6 +199,7 @@ class TirexLSTMModel(BaselineModel):
         )
 
     def predict(self, context_df, n_pred_steps):
+        # dataframe input variant; called from evaluator.py and run_evaluation.py
         ctx = context_df.sort_values("t_utc") if "t_utc" in context_df.columns else context_df
         return self._predict_from_series(
             ctx["dx_norm"].values,
