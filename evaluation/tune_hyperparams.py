@@ -705,7 +705,8 @@ def run_minimal_lstm_optimization(diagnostics_dir):
             history_csv_path=history_path,
         )
 
-    sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=10, multivariate=False)
+    #sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=10, multivariate=False)
+    sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=len(feature_set_labels) + 10, multivariate=False) # False concerns the HP, not the Model parameters, so set to false for "small" number of trials
     pruner = optuna.pruners.SuccessiveHalvingPruner(
         min_resource=MINIMAL_LSTM_PRUNER_MIN_RESOURCE,
         reduction_factor=MINIMAL_LSTM_PRUNER_REDUCTION_FACTOR,
@@ -717,6 +718,19 @@ def run_minimal_lstm_optimization(diagnostics_dir):
         sampler=sampler,
         pruner=pruner,
     )
+
+    fs_seed = { # initial search for feature set uses these params i found in an earlier run (good and common, not the optimum)
+    "hidden_size": 256,
+    "num_layers": 2,
+    "dropout": 0.3,
+    "learning_rate": 0.0004,
+    "batch_size": 256,
+    }
+
+    for label in feature_set_labels:
+        study.enqueue_trial({"feature_set": label, **fs_seed})
+
+
     study.optimize(
         objective,
         n_trials=MINIMAL_LSTM_N_TRIALS,
@@ -825,7 +839,6 @@ if __name__ == "__main__":
     if any(p.exists() for p in existing_tuning_csvs):
         print(f"[Warning] Existing tuning outputs found in {diagnostics_dir}. Files will be overwritten for run '{CONFIG['run']['name']}'.")
 
-    print(f"Hybrid search trials: {HYBRID_N_TRIALS} | Kalman: {KALMAN_N_TRIALS} | CTRV EKF: {CTRV_EKF_N_TRIALS}")
     print(
         f"Run: {CONFIG['run']['name']} | seed={SEED} | sample_pct={SAMPLE_PCT}% "
         f"| tuning_validation_pct={TUNING_VALIDATION_PCT}%"

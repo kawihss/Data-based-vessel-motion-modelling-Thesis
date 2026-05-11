@@ -1,6 +1,6 @@
 run:
-  name: foundation_full_channel_100
-  description: thesis run. for channel it used velocity steps 9 instead of 1, so rerunning lstm. all other fill_x runs should be identical to specific runs
+  name: lstm_river_river_100
+  description: thesis run. testing HP selection not separate
   seed: 42
   sample_pct: 100 #of 100
 
@@ -14,8 +14,8 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: channel # null, not none
-  context_filter_evaluation: channel # null
+  context_filter_tuning: river # null, not none
+  context_filter_evaluation: river # null
 
 
 evaluation:
@@ -28,8 +28,8 @@ models:
   hybrid: false
   kalman: false
   ctrv_ekf: false
-  tirex_lstm: true
-  minimal_lstm: false
+  tirex_lstm: false
+  minimal_lstm: true
   chronos2_zero_shot: false
   tirex:
     model_name: NX-AI/TiRex
@@ -64,7 +64,7 @@ tuning:
   n_trials_hybrid: 100
   n_trials_kalman: 100
   n_trials_ctrv_ekf: 100
-  n_trials_minimal_lstm: 64 # consider reduction_factor^n
+  n_trials_minimal_lstm: 100 # consider reduction_factor^n + nseed + nstartup_trials for TPE sampler startup . use big 100 and hope for early stopping
   early_stopping_patience: 50
   early_stopping_min_delta: 0.0001
   minimal_lstm:
@@ -75,15 +75,23 @@ tuning:
     learning_rate_min: 0.0001
     learning_rate_max: 0.01
     batch_size: [128, 256, 512]
-    feature_sets:
-      #- [dx_norm, dy_norm]
-      #- [dx_norm, dy_norm, sog_norm]
-      #- [dx_norm, dy_norm, rot_norm]
-      #- [dx_norm, dy_norm, cog_sin_norm, cog_cos_norm]
-      #- [dx_norm, dy_norm, sog_norm, rot_norm]
-      #- [dx_norm, dy_norm, sog_norm, cog_sin_norm, cog_cos_norm]
-      #- [dx_norm, dy_norm, rot_norm, cog_sin_norm, cog_cos_norm]
+    feature_sets: # all permutations as specified in thesis text
+      - [dx_norm, dy_norm]
+      - [dx_norm, dy_norm, sog_norm]
+      - [dx_norm, dy_norm, rot_norm]
+      - [dx_norm, dy_norm, cog_sin_norm, cog_cos_norm]
+      - [dx_norm, dy_norm, sog_norm, rot_norm]
+      - [dx_norm, dy_norm, sog_norm, cog_sin_norm, cog_cos_norm]
+      - [dx_norm, dy_norm, rot_norm, cog_sin_norm, cog_cos_norm]
       - [dx_norm, dy_norm, sog_norm, rot_norm, cog_sin_norm, cog_cos_norm]
+      - [dx_norm, dy_norm, dt_norm]
+      - [dx_norm, dy_norm, sog_norm, dt_norm]
+      - [dx_norm, dy_norm, rot_norm, dt_norm]
+      - [dx_norm, dy_norm, cog_sin_norm, cog_cos_norm, dt_norm]
+      - [dx_norm, dy_norm, sog_norm, rot_norm, dt_norm]
+      - [dx_norm, dy_norm, sog_norm, cog_sin_norm, cog_cos_norm, dt_norm]
+      - [dx_norm, dy_norm, rot_norm, cog_sin_norm, cog_cos_norm, dt_norm]
+      - [dx_norm, dy_norm, sog_norm, rot_norm, cog_sin_norm, cog_cos_norm, dt_norm]
     pruner:
       min_resource: 8
       reduction_factor: 2
@@ -98,6 +106,6 @@ plotting:
     hybrid_cv_ctrv: false
     kalman: false
     ctrv_ekf: false
-    tirex_lstm: true
+    tirex_lstm: false
     chronos2_zero_shot: false
-    minimal_lstm: false
+    minimal_lstm: true
