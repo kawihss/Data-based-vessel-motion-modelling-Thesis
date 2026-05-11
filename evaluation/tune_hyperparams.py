@@ -81,17 +81,21 @@ def _build_lstm_samples(split, feature_columns, sample_pct=100, seed=SEED):
     context_filter = CONFIG["data"].get("context_filter_tuning")
     files = _resolve_files(data_dir, split, context_filter)
     if sample_pct < 100:
-        rng = np.random.default_rng(seed) # not stratisfied, just for testing, full sets used in thesis (except for Feature selection, see thesis text)
+        rng = np.random.default_rng(seed)
         n = max(1, int(len(files) * sample_pct / 100))
         files = rng.choice(files, size=n, replace=False).tolist()
+    print(f"[_build_lstm_samples] {split}: reading {len(files)} files, {len(feature_columns)} columns")
     x_list, y_list = [], []
-    for file_path in files:
+    for i, file_path in enumerate(files):
+        if i % max(1, len(files) // 10) == 0:
+            print(f"{split}: {i}/{len(files)} files...")
         df = _read_track_file(file_path)
         for context_df, pred_df in _iter_track_groups(df):
             if len(context_df) < CONTEXT_LEN or len(pred_df) < PRED_LEN:
                 continue
             x_list.append(context_df.loc[:, feature_columns].to_numpy(dtype=np.float32)[-CONTEXT_LEN:])
             y_list.append(pred_df.loc[:, TARGET_COLUMNS].to_numpy(dtype=np.float32)[:PRED_LEN])
+    print(f"{split}: extracted {len(x_list)} samples")
     return np.stack(x_list), np.stack(y_list)
 
 
@@ -666,17 +670,44 @@ def run_minimal_lstm_optimization(diagnostics_dir):
     #5. Return best parameters for summary table
 
 
+    import time
     tuning_cfg = MINIMAL_LSTM_TUNING_CFG
     feature_sets = [tuple(fs) for fs in tuning_cfg["feature_sets"]]
     feature_set_labels = ["|".join(fs) for fs in feature_sets]
     feature_set_lookup = dict(zip(feature_set_labels, feature_sets))
+    
+    # read parquet files once per split using union of all feature columns,
+    # then slice by column index per feature set (reloaded 16 times before)
+    all_unique_features = list(dict.fromkeys(col for fs in feature_sets for col in fs))
+    print(f"[Minimal LSTM] {len(feature_sets)} feature sets, {len(all_unique_features)} unique features")
+    print(f"[Minimal LSTM] Features to load: {all_unique_features}")
+    
+    t0 = time.perf_counter()
+    print(f"[Minimal LSTM] Loading train data...")
+    try:
+        x_train_all, y_train_all = _build_lstm_samples("train", all_unique_features, sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
+        print(f"[Minimal LSTM] Train loaded in {time.perf_counter() - t0:.1f}s: {x_train_all.shape}")
+    except Exception as e:
+        print(f"[ERROR] Train loading failed: {type(e).__name__}: {e}")
+        raise
+    
+    t0 = time.perf_counter()
+    print(f"[Minimal LSTM] Loading val data...")
+    try:
+        x_val_all, y_val_all = _build_lstm_samples("val", all_unique_features, sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
+        print(f"[Minimal LSTM] Val loaded in {time.perf_counter() - t0:.1f}s: {x_val_all.shape}")
+    except Exception as e:
+        print(f"[ERROR] Val loading failed: {type(e).__name__}: {e}")
+        raise
+
     data_by_feature_set = {}
     for feature_set, feature_set_label in zip(feature_sets, feature_set_labels):
-        x_train, y_train = _build_lstm_samples("train", feature_set, sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
-        x_val, y_val = _build_lstm_samples("val", feature_set, sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
-        data_by_feature_set[feature_set_label] = (x_train, y_train, x_val, y_val)
+        col_indices = [all_unique_features.index(c) for c in feature_set]
+        x_train = x_train_all[:, :, col_indices]
+        x_val = x_val_all[:, :, col_indices]
+        data_by_feature_set[feature_set_label] = (x_train, y_train_all, x_val, y_val_all)
         print(
-            f"Minimal LSTM tuning ({feature_set_label}): "
+            f"[Minimal LSTM] Feature set '{feature_set_label}': "
             f"{x_train.shape[0]} train samples, {x_val.shape[0]} val samples"
         )
 
@@ -730,7 +761,7 @@ def run_minimal_lstm_optimization(diagnostics_dir):
     for label in feature_set_labels:
         study.enqueue_trial({"feature_set": label, **fs_seed})
 
-
+    print(f"[Minimal LSTM] Starting Optuna optimization with {MINIMAL_LSTM_N_TRIALS} trials...")
     study.optimize(
         objective,
         n_trials=MINIMAL_LSTM_N_TRIALS,
@@ -742,7 +773,8 @@ def run_minimal_lstm_optimization(diagnostics_dir):
     )
     study_path = diagnostics_dir / "minimal_lstm_study.pkl"
     joblib.dump(study, study_path)
-    print(f"Saved Optuna study: {study_path}")
+    print(f"[Minimal LSTM] Optimization complete. Best val_loss: {study.best_value:.6f}")
+    print(f"[Minimal LSTM] Study saved to {study_path}")
     save_study_plots(study, diagnostics_dir / "optuna_plots", "minimal_lstm")
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
