@@ -1,6 +1,6 @@
 run:
-  name: foundation_full_full_100
-  description: thesis run
+  name: foundation_full_channel_100
+  description: thesis run. for channel it used velocity steps 9 instead of 1, so rerunning lstm. all other fill_x runs should be identical to specific runs
   seed: 42
   sample_pct: 100 #of 100
 
@@ -14,8 +14,8 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: null # null, not none
-  context_filter_evaluation: null # null
+  context_filter_tuning: channel # null, not none
+  context_filter_evaluation: channel # null
 
 
 evaluation:
@@ -30,7 +30,7 @@ models:
   ctrv_ekf: false
   tirex_lstm: true
   minimal_lstm: false
-  chronos2_zero_shot: true
+  chronos2_zero_shot: false
   tirex:
     model_name: NX-AI/TiRex
     device: cuda # null-> auto-detect, or specify "cpu" or "cuda"
@@ -97,7 +97,7 @@ plotting:
     ctrv_arc: false
     hybrid_cv_ctrv: false
     kalman: false
-    ctrv_ekf: true
+    ctrv_ekf: false
     tirex_lstm: true
-    chronos2_zero_shot: true
+    chronos2_zero_shot: false
     minimal_lstm: false

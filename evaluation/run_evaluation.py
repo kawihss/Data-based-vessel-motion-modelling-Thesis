@@ -55,7 +55,7 @@ SAMPLE_PCT = int(CONFIG["run"]["sample_pct"])
 EVALUATION_PCT = int(get_sampling_value(CONFIG, "evaluation_pct"))
 
 np.random.seed(SEED)
-print(EVAL_SPLIT)
+
 CHRONOS_COVARIATE_COLUMNS = (
     "dx_norm",
     "dy_norm",
@@ -70,7 +70,7 @@ REPORT_CONTEXTS = ("harbour", "river", "channel", "lock")
 _DXDY_SCALER_PARAMS_CACHE = {}
 
 def _load_dxdy_scaler_params(scaler_path_str):
-    """Load dx/dy mean and scale from scalers.pkl, cached by path."""
+    #Load dx/dy mean and scale from scalers.pkl, cached by path
     cached = _DXDY_SCALER_PARAMS_CACHE.get(scaler_path_str)
     if cached is not None:
         return cached
@@ -89,7 +89,7 @@ def _load_dxdy_scaler_params(scaler_path_str):
 
 
 def _denormalize_true_displacements(dx_norm, dy_norm, scaler_path_str):
-    """Convert normalized dx_norm/dy_norm ground-truth to real metres."""
+    #Convert normalized dx_norm/dy_norm ground-truth to real metres
     p = _load_dxdy_scaler_params(scaler_path_str)
     dx = p["dx_scale"] * np.asarray(dx_norm, dtype=float) + p["dx_mean"]
     dy = p["dy_scale"] * np.asarray(dy_norm, dtype=float) + p["dy_mean"]
@@ -97,6 +97,7 @@ def _denormalize_true_displacements(dx_norm, dy_norm, scaler_path_str):
 
 
 def _load_tuned_values(diagnostics_dir):
+    #read optimized tuning_best_params_val.csv into dict
     df = pd.read_csv(diagnostics_dir / "tuning_best_params_val.csv")
     return {
         str(row.get("model_key", "")).strip().lower(): row.to_dict()
@@ -106,6 +107,7 @@ def _load_tuned_values(diagnostics_dir):
 
 
 def _requires_tuned_values():
+    #Check if any model requires tuned values
     return any([
         RUN_CONSTANT_VELOCITY,
         RUN_CTRV,
@@ -118,6 +120,7 @@ def _requires_tuned_values():
 
 
 def _stack_quantile_lists(quantile_predictions):
+    #put quantile predictions into numpy arrays
     return {
         float(quantile): np.asarray(predictions, dtype=float)
         for quantile, predictions in quantile_predictions.items()
@@ -125,6 +128,7 @@ def _stack_quantile_lists(quantile_predictions):
 
 
 def _empty_overall_metrics():
+    #Return a dictionary with empty overall metrics if no tracks were evaluated for a model, fallback
     return {
         'ADE': np.nan,
         'FDE': np.nan,
@@ -135,6 +139,7 @@ def _empty_overall_metrics():
 
 
 def _make_context_bucket():
+    #used once per modle to collect data for each domain
     return {
         'true_pos': [],
         'pred_pos': [],
@@ -146,6 +151,16 @@ def _make_context_bucket():
     }
 
 if __name__ == "__main__":
+    # Main overview:
+    # 1) Resolve run paths and prepare output structure and directories
+    # 2) Load tuning results and build model kwargs
+    # 3) Instantiate selected models
+    # 4) Resolve evaluation files, subsample, and cache
+    # 5) Run evaluation per model/file
+    # 6) Aggregate metrics and write CSV outputs
+    # 7) Write run metadata and print final table
+
+    ######## 1. Resolve paths and prepare output structure ###
     run_paths = resolve_run_paths(PROJECT_ROOT, CONFIG, create=True)
     tuning_diagnostics_dir = run_paths["tuning_dir"]
     test_diagnostics_dir = run_paths["diagnostics_dir"]
@@ -153,15 +168,16 @@ if __name__ == "__main__":
 
     comparison_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_model_comparison.csv"
     if comparison_path.exists():
-        print(f"[Warning] Existing evaluation outputs found in {test_diagnostics_dir}. Files will be overwritten for run '{CONFIG['run']['name']}'.")
+        print(f"Existing evaluation outputs found in {test_diagnostics_dir}. Files will be overwritten for run '{CONFIG['run']['name']}'.")
 
     print(
         f"Run: {CONFIG['run']['name']} | split={EVAL_SPLIT} | seed={SEED} "
         f"| sample_pct={SAMPLE_PCT}% | evaluation_pct={EVALUATION_PCT}%"
     )
 
+    ######## 2. Load tuned values and derive model kwargs ###
     tuned_values = _load_tuned_values(tuning_diagnostics_dir) if _requires_tuned_values() else {}
-    cv_row = tuned_values.get("cv") or tuned_values.get("constant_velocity")
+    cv_row = tuned_values.get("cv") 
     ctrv_row = tuned_values.get("ctrv")
     ctrv_arc_row = tuned_values.get("ctrv_arc")
     hybrid_row = tuned_values.get("hybrid_cv_ctrv")
@@ -239,7 +255,9 @@ if __name__ == "__main__":
             "torch_dtype": CHRONOS2_TORCH_DTYPE,
             "scaler_path": str(PROJECT_ROOT / CHRONOS2_SCALER_PATH),
         }
+    # simple LSTM is not included here, because params are trained and saved differently in config
 
+    ######## 3. Instantiate selected models ###
     models = []
     if RUN_CONSTANT_VELOCITY:
         if not cv_kwargs:
@@ -293,7 +311,8 @@ if __name__ == "__main__":
     if not models:
         raise SystemExit(0)
 
-    comparison_rows = []
+    ######## 4. Resolve, subsample, and cache evaluation files ###
+    comparison_rows = [] # tracks metrics for each model to compare at the end
     data_dir = PROJECT_ROOT / CONFIG["data"]["parquet_dir"]
     files = _resolve_files(data_dir, EVAL_SPLIT, CONTEXT_FILTER_EVALUATION)
     files = subsample_items(files, sample_pct=EVALUATION_PCT, seed=SEED)
@@ -309,20 +328,21 @@ if __name__ == "__main__":
     # Load all parquet files into memory ONCE
     file_data = [(f, _read_track_file(f)) for f in files]
 
+    ######## 5. Run evaluation per model/file ###
     # Evaluate all models using the cached dataframes
-    for model_index, (model_key, model_label, model) in enumerate(models, start=1):
+    for model_index, (model_key, model_label, model) in enumerate(models, start=1): # 1 for printing
         per_file_rows = []
-        all_true = []
-        all_pred = []
-        all_true_disp = []
-        all_quantile_predictions = {}
+        all_true = [] # accumulate ground-truth positions of all tracks across all files for a specific model during the evaluation process.
+        all_pred = [] # accumulate predicted positions %%%
+        all_true_disp = [] # accumulate ground-truth displacements %%%%
+        all_quantile_predictions = {} # accumulate quantile predictions if model supports it
         per_context_data = {context: _make_context_bucket() for context in REPORT_CONTEXTS}
         completed_files = 0
 
         print(f"[Progress] model {model_index}/{total_models} started ({model_label})")
 
         for file_path, df in file_data:
-            file_true = []
+            file_true = [] # same as all_.., but file level
             file_pred = []
             file_true_disp = []
             file_quantile_predictions = {}
@@ -332,6 +352,7 @@ if __name__ == "__main__":
                 last_x = context_df['x'].iloc[-1]
                 last_y = context_df['y'].iloc[-1]
 
+                #quantile predictions for foundatio models
                 quantile_predictions = model.predict_quantiles(context_df, n_pred_steps) if hasattr(model, 'predict_quantiles') else None
                 try:
                     displacements = np.asarray(quantile_predictions[0.5], dtype=float)
@@ -342,7 +363,6 @@ if __name__ == "__main__":
                 true_displacements = None
                 if quantile_predictions is not None:
                     # Denormalize ground-truth displacements to real metres so they match
-                    # the denormalized quantile predictions from Chronos/TiRex.
                     scaler_rel_path = TIREX_SCALER_PATH if model_key == "tirex_lstm" else CHRONOS2_SCALER_PATH
                     _active_scaler_path = str(PROJECT_ROOT / scaler_rel_path)
                     true_displacements = _denormalize_true_displacements(
@@ -353,7 +373,7 @@ if __name__ == "__main__":
 
                 if len(true_positions) != n_pred_steps:
                     continue
-
+                
                 file_true.append(true_positions)
                 file_pred.append(pred_positions)
                 if quantile_predictions is not None:
@@ -361,6 +381,7 @@ if __name__ == "__main__":
                     for quantile, prediction in quantile_predictions.items():
                         file_quantile_predictions.setdefault(float(quantile), []).append(np.asarray(prediction, dtype=float))
 
+                # process context buckets for domain-specific evaluation 
                 if context_label in per_context_data:
                     bucket = per_context_data[context_label]
                     bucket['true_pos'].append(true_positions)
@@ -371,6 +392,9 @@ if __name__ == "__main__":
                             bucket['quantiles'].setdefault(float(quantile), []).append(np.asarray(prediction, dtype=float))
                         for covariate in CHRONOS_COVARIATE_COLUMNS:
                             bucket['covariates'][covariate].append(ctx_sorted[covariate].to_numpy(dtype=float, copy=True))
+                        #quantify motion magnitude as sum of absolute dx and dy, averaged over the track, 
+                        # future_motion_score as average euclidean norm of true displacements, 
+                        # used for importance analysis
                         bucket['motion_magnitude'].append(
                             np.abs(ctx_sorted['dx_norm'].to_numpy(dtype=float, copy=True)) + np.abs(ctx_sorted['dy_norm'].to_numpy(dtype=float, copy=True))
                         )
@@ -378,6 +402,8 @@ if __name__ == "__main__":
                             float(np.sqrt((true_displacements ** 2).sum(axis=1)).mean())
                         )
 
+            #call the evaluator twice, once for per file metrics, once for overall metrics. 
+            #room for improvement but i already started evaluation like this
             if file_true:
                 file_metrics = evaluate_trajectory(np.array(file_true), np.array(file_pred))
                 file_row = {
@@ -430,6 +456,7 @@ if __name__ == "__main__":
         else:
             metrics = _empty_overall_metrics()
 
+        ######## 7. Aggregate model metrics and collect summary row ###
         comparison_rows.append({
             'model': model_label,
             'ADE': metrics.get('ADE'),
@@ -529,6 +556,7 @@ if __name__ == "__main__":
             ade_path = test_diagnostics_dir / f"{EVAL_SPLIT}_ade_per_step_{model_key}.csv"
             pd.DataFrame({'ade': ade_per_step}).to_csv(ade_path, index=False)
 
+    ######## 8. Save comparison, write metadata, print final output ###
     comparison_df = pd.DataFrame(comparison_rows)
     comparison_df.to_csv(comparison_path, index=False)
 

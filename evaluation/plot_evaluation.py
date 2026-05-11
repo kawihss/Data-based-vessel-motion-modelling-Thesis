@@ -12,6 +12,14 @@ from evaluation.evaluator import plot_horizon_error
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths
 
 
+#  loads evaluation/tuning CSV outputs from the selected run directory
+# and generates all publication-style plots for model comparison:
+# - Evaluation quality plots (horizon, monthly, context, uncertainty)
+# - Feature importance plots (channel and timestep)
+# - Tuning diagnostics (search-space and convergence).. (but you should use optuna plots when available, this was implemented before i knew about them)
+# - Pairwise RMSE distribution plots (violin)
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG = load_runtime_config(PROJECT_ROOT)
 
@@ -54,7 +62,7 @@ _MODEL_FLAGS = {
 }
 ALL_MODEL_LABELS = {k: v for k, v in _ALL_MODEL_LABELS.items() if _MODEL_FLAGS[k]}
 
-METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]  # columns expected in per-month CSVs
+METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]  # expected columns in per-month CSVs
 CONTEXTS_TO_PLOT = ["harbour", "river", "channel", "lock"]
 CONTEXT_METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]
 UNCERTAINTY_METRICS_TO_PLOT = ["MIW", "Coverage", "Winkler80"]
@@ -73,8 +81,8 @@ tuning_diagnostics_dir = selected_run_dir / "tuning"
 plots_dir.mkdir(parents=True, exist_ok=True)
 
 
-# 1. ADE horizon plot
-# 
+# ---------- Evaluation plot group ----------
+# 1) ADE horizon plot
 def plot_ade_horizon():
     fig, ax = plt.subplots(figsize=(9, 5))
     any_plotted = False
@@ -105,7 +113,7 @@ def plot_ade_horizon():
 
 
 # 2. Monthly metrics plot
-def _parse_month(val):
+def _parse_month(val): # greyed out i vscode, but required
     # Parse strings like '2024-03' to a sortable (year, month) tuple.
     try:
         parts = str(val).split("-")
@@ -115,6 +123,7 @@ def _parse_month(val):
 
 
 def plot_monthly_metrics():
+    # Line plots for ADE/FDE/RMSE over months per enabled model
     for metric in METRICS_TO_PLOT:
         fig, ax = plt.subplots(figsize=(11, 5))
         any_plotted = False
@@ -122,11 +131,9 @@ def plot_monthly_metrics():
         for key, label in ALL_MODEL_LABELS.items():
             month_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_month_{key}.csv"
             if not month_path.exists():
-                #print(f"[monthly/{metric}] No per-month file for '{label}', skipping.")
                 continue
             df = pd.read_csv(month_path)
             if "month" not in df.columns or metric not in df.columns:
-                #print(f"[monthly/{metric}] '{label}' CSV missing 'month' or '{metric}' column, skipping.")
                 continue
 
             df = df.dropna(subset=["month", metric])
@@ -162,6 +169,7 @@ def plot_monthly_metrics():
 
 
 def _plot_context_metric_group(metrics, output_prefix):
+    # Shared grouped-bar plotting logic for context and uncertainty metrics
     for metric in metrics:
         fig, ax = plt.subplots(figsize=(11, 5))
         any_plotted = False
@@ -171,11 +179,9 @@ def _plot_context_metric_group(metrics, output_prefix):
         for idx, (key, label) in enumerate(ALL_MODEL_LABELS.items()):
             context_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_context_{key}.csv"
             if not context_path.exists():
-                #print(f"[context/{metric}] No per-context file for '{label}', skipping.")
                 continue
             df = pd.read_csv(context_path)
             if "context" not in df.columns or metric not in df.columns:
-                ##print(f"[context/{metric}] '{label}' CSV missing 'context' or '{metric}' column, skipping.")
                 continue
 
             aligned = (
@@ -209,14 +215,17 @@ def _plot_context_metric_group(metrics, output_prefix):
 
 
 def plot_context_metrics():
+    # Context-wise ADE/FDE/RMSE.
     _plot_context_metric_group(CONTEXT_METRICS_TO_PLOT, output_prefix="context")
 
 
 def plot_uncertainty_metrics():
+    # Context-wise MIW/Coverage/Winkler80.
     _plot_context_metric_group(UNCERTAINTY_METRICS_TO_PLOT, output_prefix="uncertainty")
 
 
 def plot_channel_importance():
+    # normalized covariate importance per context, shown as 2x2 panels of bar charts per model
     for key, label in ALL_MODEL_LABELS.items():
         importance_path = diagnostics_dir / f"{EVAL_SPLIT}_channel_importance_{key}.csv"
         if not importance_path.exists():
@@ -257,6 +266,7 @@ def plot_channel_importance():
 
 
 def plot_timestep_importance():
+    # 2x2 context panels showing normalized context-timestep importance
     for key, label in ALL_MODEL_LABELS.items():
         importance_path = diagnostics_dir / f"{EVAL_SPLIT}_timestep_importance_{key}.csv"
         if not importance_path.exists():
@@ -300,7 +310,10 @@ def plot_timestep_importance():
 
 
 
+# ---------- Tuning diagnostics plot group ----------
+#prefer optuna plots for tuning diagnostics when available
 def plot_results(df, best_steps, best_rmse, model_label, output_path):
+    # Generic 1D velocity_steps tuning curve (RMSE vs steps)
     df_sorted = df.sort_values("params_velocity_steps")
 
     fig, ax = plt.subplots(figsize=(9, 5))
@@ -345,6 +358,7 @@ def plot_hybrid_results(
     model_label,
     output_path,
 ):
+    # Hybrid-specific diagnostics: pair heatmap + two sensitivity scatters. prefer optuna plots
     fig, (ax_left, ax_mid, ax_right) = plt.subplots(1, 3, figsize=(18, 5.5))
 
     # Panel 1: best RMSE observed for each (cv_steps, ctrv_steps) pair.
@@ -408,6 +422,7 @@ def plot_hybrid_results(
 
 
 def plot_kalman_results(df, best_params, best_rmse, model_label, output_path):
+    # Scatter diagnostics per Kalman parameter (log-scale x-axes).
     param_cols = {
         "params_q_pos": "q_pos (process noise, position)",
         "params_q_vel": "q_vel (process noise, velocity)",
@@ -441,6 +456,7 @@ def plot_kalman_results(df, best_params, best_rmse, model_label, output_path):
 
 
 def plot_ctrv_ekf_results(df, best_params, best_rmse, model_label, output_path):
+    # Scatter diagnostics per CTRV-EKF parameter (log-scale x-axes).
     param_cols = {
         "params_q_pos": "q_pos (process noise, position)",
         "params_q_vel": "q_vel (process noise, velocity)",
@@ -476,6 +492,7 @@ def plot_ctrv_ekf_results(df, best_params, best_rmse, model_label, output_path):
 
 
 def plot_convergence(df, model_label, output_path):
+    # Optuna convergence: trial values and cumulative best value.
     if "state" in df.columns:
         df = df[df["state"] == "COMPLETE"].copy()
     if "number" not in df.columns or "value" not in df.columns or df.empty:
@@ -509,6 +526,7 @@ def plot_convergence(df, model_label, output_path):
 
 
 def plot_minimal_lstm_results(df, best_params, best_rmse, model_label, output_path):
+    # Minimal-LSTM hyperparameter sensitivity scatter panels.
     param_cols = {
         "params_hidden_size": "hidden_size (units)",
         "params_num_layers": "num_layers",
@@ -541,6 +559,7 @@ def plot_minimal_lstm_results(df, best_params, best_rmse, model_label, output_pa
 
 
 def plot_tuning_results():
+    # Dispatch to model-specific tuning plot builders
     if not tuning_diagnostics_dir.exists():
         print("[tuning] No tuning diagnostics directory found, skipping.")
         return
@@ -679,6 +698,7 @@ def plot_tuning_results():
 
 
 
+# ---------- Pairwise RMSE distribution (violin) plot group ----------
 def _load_per_file_rmse(model_keys_labels):
     all_data = []
     for key, label in model_keys_labels:
