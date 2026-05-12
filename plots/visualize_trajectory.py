@@ -23,6 +23,7 @@ SHOW_KALMAN = True
 SHOW_CTRV_EKF = True
 SHOW_CHRONOS2 = True
 SHOW_TIREX = True
+SHOW_MINIMAL_LSTM = True
 
 
 def _has_prediction_files_for_stem(model_output_dir, source_stem):
@@ -93,6 +94,7 @@ def load_model_predictions(source_file, model_output_dir='output/08_baseline_res
         'ctrv_ekf':          {'label': 'CTRV EKF',  'color': '#8c564b', 'marker': 'P', 'alpha': 0.55},
         'chronos2_zero_shot':{'label': 'Chronos-2', 'color': '#2ecc71', 'marker': 'o', 'alpha': 0.9},
         'tirex_lstm':        {'label': 'TiRex',     'color': '#f39c12', 'marker': '*', 'alpha': 0.9},
+        'minimal_lstm':      {'label': 'Minimal LSTM', 'color': '#1abc9c', 'marker': 'X', 'alpha': 0.9},
     }
 
     source_stem = Path(source_file).stem
@@ -134,6 +136,7 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
         'ctrv_ekf':           SHOW_CTRV_EKF,
         'chronos2_zero_shot': SHOW_CHRONOS2,
         'tirex_lstm':         SHOW_TIREX,
+        'minimal_lstm':       SHOW_MINIMAL_LSTM,
     }
 
     fig, ax = plt.subplots(figsize=(14, 9))
@@ -244,8 +247,8 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
         fig.canvas.draw_idle()
 
     # Model toggle buttons
-    toggle_keys   = ['constant_velocity', 'ctrv', 'ctrv_arc', 'hybrid_cv_ctrv', 'kalman', 'ctrv_ekf', 'chronos2_zero_shot', 'tirex_lstm']
-    toggle_labels = ['CV', 'CTRV', 'CTRV Arc', 'Hybrid', 'Kalman', 'CTRV EKF', 'Chronos-2', 'TiRex']
+    toggle_keys   = ['constant_velocity', 'ctrv', 'ctrv_arc', 'hybrid_cv_ctrv', 'kalman', 'ctrv_ekf', 'chronos2_zero_shot', 'tirex_lstm', 'minimal_lstm']
+    toggle_labels = ['CV', 'CTRV', 'CTRV Arc', 'Hybrid', 'Kalman', 'CTRV EKF', 'Chronos-2', 'TiRex', 'Minimal LSTM']
     toggle_active = [visibility[k] for k in toggle_keys]
 
     ax_check = plt.axes([0.15, 0.01, 0.50, 0.08])
@@ -287,7 +290,7 @@ if __name__ == "__main__":
     # Point to a parquet file in output/07_parquet/ (stem must match the prediction output filenames)
     source_file = project_root / 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-01_01.parquet'
     #source_file = project_root / 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-07_01.parquet'
-    #source_file = project_root / 'output/07_parquet/test_river_processed_bremerhaven_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Bremerhaven-2025-02_16.parquet'
+    source_file = project_root / 'output/07_parquet/test_river_processed_bremerhaven_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Bremerhaven-2025-02_16.parquet'
 
     source_file = _select_source_file(
         project_root=project_root,
