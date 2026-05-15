@@ -1,8 +1,8 @@
 run:
-  name: lstm_river_river_100
+  name: baseline_full_full_100
   description: thesis run. testing HP selection not separate
   seed: 42
-  sample_pct: 100 #of 100
+  sample_pct: 1 #of 100
 
 sampling:
   tuning_validation_pct: 100 #of 100
@@ -30,6 +30,7 @@ models:
   ctrv_ekf: false
   tirex_lstm: false
   minimal_lstm: true
+  minimal_lstm_domain: false
   chronos2_zero_shot: false
   tirex:
     model_name: NX-AI/TiRex
@@ -52,6 +53,14 @@ models:
     scaler_path: output/05_normalized/scalers.pkl
   minimal_lstm_cfg:
     checkpoint_path: output/08_baseline_results/models/minimal_lstm.pt
+    scaler_path: output/05_normalized/scalers.pkl
+    device: cuda # cpu or cuda
+    preload_to_gpu: true
+    max_epochs: 100
+    patience: 8
+    min_delta: 0.0001
+  minimal_lstm_domain_cfg:
+    checkpoint_path: output/08_baseline_results/models/minimal_lstm_domain.pt
     scaler_path: output/05_normalized/scalers.pkl
     device: cuda # cpu or cuda
     preload_to_gpu: true
@@ -100,12 +109,12 @@ tuning:
 plotting:
   step_duration_s: 30
   models:
-    constant_velocity: false
-    ctrv: false
-    ctrv_arc: false
+    constant_velocity: true
+    ctrv: true
+    ctrv_arc: true
     hybrid_cv_ctrv: false
     kalman: false
     ctrv_ekf: false
     tirex_lstm: false
     chronos2_zero_shot: false
-    minimal_lstm: true
+    minimal_lstm: false

@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityModel, ConstantTurnRateVelocityArcModel, HybridCVCTRVModel
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
 from models.sequence import TirexLSTMModel
-from models.sequence.minimal_lstm import MinimalLSTMNet, CONTEXT_LEN, PRED_LEN, FEATURE_COLUMNS, TARGET_COLUMNS
+from models.sequence.minimal_lstm import MinimalLSTMNet, MinimalLSTMDomainNet, DOMAIN_TO_INDEX, CONTEXT_LEN, PRED_LEN, FEATURE_COLUMNS, TARGET_COLUMNS
 from evaluation.evaluator import load_tracks_cached_numpy, evaluate_model_cached_numpy, _resolve_files, _read_track_file, _iter_track_groups
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths, update_latest_run_pointer, write_run_metadata, get_sampling_value
 from evaluation.plot_optuna import save_study_plots
@@ -39,12 +39,19 @@ RUN_KALMAN = bool(CONFIG["models"]["kalman"])
 RUN_CTRV_EKF = bool(CONFIG["models"]["ctrv_ekf"])
 RUN_TIREX_LSTM = bool(CONFIG["models"]["tirex_lstm"])
 RUN_MINIMAL_LSTM = bool(CONFIG["models"].get("minimal_lstm", False))
+RUN_MINIMAL_LSTM_DOMAIN = bool(CONFIG["models"].get("minimal_lstm_domain", False))
 MINIMAL_LSTM_CFG = CONFIG["models"].get("minimal_lstm_cfg", {})
 MINIMAL_LSTM_DEVICE = str(MINIMAL_LSTM_CFG.get("device", "cpu"))
 MINIMAL_LSTM_CHECKPOINT = str(MINIMAL_LSTM_CFG.get("checkpoint_path", ""))
 MINIMAL_LSTM_MAX_EPOCHS = int(MINIMAL_LSTM_CFG.get("max_epochs", 60))
 MINIMAL_LSTM_PATIENCE = int(MINIMAL_LSTM_CFG.get("patience", 8))
 MINIMAL_LSTM_MIN_DELTA = float(MINIMAL_LSTM_CFG.get("min_delta", 1e-4))
+MINIMAL_LSTM_DOMAIN_CFG = CONFIG["models"].get("minimal_lstm_domain_cfg", {})
+MINIMAL_LSTM_DOMAIN_DEVICE = str(MINIMAL_LSTM_DOMAIN_CFG.get("device", "cpu"))
+MINIMAL_LSTM_DOMAIN_CHECKPOINT = str(MINIMAL_LSTM_DOMAIN_CFG.get("checkpoint_path", ""))
+MINIMAL_LSTM_DOMAIN_MAX_EPOCHS = int(MINIMAL_LSTM_DOMAIN_CFG.get("max_epochs", 60))
+MINIMAL_LSTM_DOMAIN_PATIENCE = int(MINIMAL_LSTM_DOMAIN_CFG.get("patience", 8))
+MINIMAL_LSTM_DOMAIN_MIN_DELTA = float(MINIMAL_LSTM_DOMAIN_CFG.get("min_delta", 1e-4))
 MINIMAL_LSTM_TUNING_CFG = CONFIG["tuning"].get("minimal_lstm", {})
 MINIMAL_LSTM_PRUNER_CFG = MINIMAL_LSTM_TUNING_CFG.get("pruner", {})
 MINIMAL_LSTM_PRUNER_MIN_RESOURCE = int(MINIMAL_LSTM_PRUNER_CFG.get("min_resource", 5))
@@ -52,6 +59,7 @@ MINIMAL_LSTM_PRUNER_REDUCTION_FACTOR = int(MINIMAL_LSTM_PRUNER_CFG.get("reductio
 MINIMAL_LSTM_PRUNER_MIN_EARLY_STOPPING_RATE = int(MINIMAL_LSTM_PRUNER_CFG.get("min_early_stopping_rate", 0))
 MINIMAL_LSTM_N_TRIALS = int(CONFIG["tuning"].get("n_trials_minimal_lstm", 30))
 MINIMAL_LSTM_PRELOAD_TO_GPU = bool(MINIMAL_LSTM_CFG.get("preload_to_gpu", False))
+MINIMAL_LSTM_DOMAIN_PRELOAD_TO_GPU = bool(MINIMAL_LSTM_DOMAIN_CFG.get("preload_to_gpu", False))
 TIREX_CFG = CONFIG["models"].get("tirex", {})
 TIREX_MODEL_NAME = str(TIREX_CFG.get("model_name", "NX-AI/TiRex"))
 TIREX_DEVICE = TIREX_CFG.get("device", None)
@@ -73,7 +81,7 @@ TUNING_VALIDATION_PCT = int(get_sampling_value(CONFIG, "tuning_validation_pct"))
 np.random.seed(SEED)
 
 
-def _build_lstm_samples(split, feature_columns, sample_pct=100, seed=SEED):
+def _build_lstm_samples(split, feature_columns, sample_pct=100, seed=SEED, with_domain_labels=False):
     #builds training/validation samples for the MinimalLSTMModel from parquet files, 
     # applying context filtering and sampling as specified in the config. 
     
@@ -85,7 +93,7 @@ def _build_lstm_samples(split, feature_columns, sample_pct=100, seed=SEED):
         n = max(1, int(len(files) * sample_pct / 100))
         files = rng.choice(files, size=n, replace=False).tolist()
     print(f"[_build_lstm_samples] {split}: reading {len(files)} files, {len(feature_columns)} columns")
-    x_list, y_list = [], []
+    x_list, y_list, domain_list = [], [], []
     for i, file_path in enumerate(files):
         if i % max(1, len(files) // 10) == 0:
             print(f"{split}: {i}/{len(files)} files...")
@@ -95,7 +103,11 @@ def _build_lstm_samples(split, feature_columns, sample_pct=100, seed=SEED):
                 continue
             x_list.append(context_df.loc[:, feature_columns].to_numpy(dtype=np.float32)[-CONTEXT_LEN:])
             y_list.append(pred_df.loc[:, TARGET_COLUMNS].to_numpy(dtype=np.float32)[:PRED_LEN])
+            if with_domain_labels:
+                domain_list.append(str(context_df["context"].iloc[-1]))
     print(f"{split}: extracted {len(x_list)} samples")
+    if with_domain_labels:
+        return np.stack(x_list), np.stack(y_list), np.asarray(domain_list, dtype=object)
     return np.stack(x_list), np.stack(y_list)
 
 
@@ -113,13 +125,19 @@ def _make_lstm_tensors(x_train, y_train, x_val, y_val, device, preload_to_gpu=Fa
     return x_train_t, y_train_t, x_val_t, y_val_t, pin_memory, False
 
 
-def _lstm_eval_loss(model, loader, criterion, device):
+def _lstm_eval_loss(model, loader, criterion, device, use_domain_one_hot=False):
     model.eval() # turn offd ropout, batchnorm, etc for evaluation
     total, count = 0.0, 0
     with torch.no_grad():
-        for x_b, y_b in loader:
-            # add MSE of forward pass multiplied by batch size to total loss 
-            total += criterion(model(x_b.to(device)), y_b.to(device)).item() * len(x_b) 
+        for batch in loader:
+            if use_domain_one_hot:
+                x_b, y_b, domain_b = batch
+                preds = model(x_b.to(device), domain_b.to(device))
+            else:
+                x_b, y_b = batch
+                preds = model(x_b.to(device))
+            # add MSE of forward pass multiplied by batch size to total loss
+            total += criterion(preds, y_b.to(device)).item() * len(x_b)
             count += len(x_b)
     return total / count
 
@@ -132,9 +150,13 @@ def _run_lstm_training(
     x_val,
     y_val,
     device_str,
+    preload_to_gpu,
     max_epochs,
     patience,
     min_delta,
+    train_domains=None,
+    val_domains=None,
+    use_domain_one_hot=False,
     trial=None,
     checkpoint_path=None,
     history_csv_path=None,
@@ -160,25 +182,48 @@ def _run_lstm_training(
             normalized[new_key] = value
         return normalized
 
-    model = MinimalLSTMNet(len(feature_columns), hidden_size, num_layers, dropout, PRED_LEN).to(device)
+    model_cls = MinimalLSTMDomainNet if use_domain_one_hot else MinimalLSTMNet
+    model = model_cls(len(feature_columns), hidden_size, num_layers, dropout, PRED_LEN).to(device)
     model = torch.compile(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr) # adam
     criterion = nn.MSELoss()
     x_train_t, y_train_t, x_val_t, y_val_t, pin_memory, preloaded_to_gpu = _make_lstm_tensors(
-        x_train, y_train, x_val, y_val, device, preload_to_gpu=MINIMAL_LSTM_PRELOAD_TO_GPU
+        x_train, y_train, x_val, y_val, device, preload_to_gpu=preload_to_gpu
     )
-    train_loader = DataLoader(
-        TensorDataset(x_train_t, y_train_t),
-        batch_size=batch_size,
-        shuffle=True, # avoid overfitting to sample order
-        pin_memory=pin_memory,
-    )
-    val_loader = DataLoader(
-        TensorDataset(x_val_t, y_val_t),
-        batch_size=batch_size,
-        shuffle=False, # consistency
-        pin_memory=pin_memory,
-    )
+    if use_domain_one_hot:
+        train_domain_ids = np.asarray([DOMAIN_TO_INDEX[name] for name in train_domains], dtype=np.int64)
+        val_domain_ids = np.asarray([DOMAIN_TO_INDEX[name] for name in val_domains], dtype=np.int64)
+        train_domain_t = torch.from_numpy(train_domain_ids)
+        val_domain_t = torch.from_numpy(val_domain_ids)
+        if preloaded_to_gpu:
+            train_domain_t = train_domain_t.to(device)
+            val_domain_t = val_domain_t.to(device)
+
+        train_loader = DataLoader(
+            TensorDataset(x_train_t, y_train_t, train_domain_t),
+            batch_size=batch_size,
+            shuffle=True, # avoid overfitting to sample order
+            pin_memory=pin_memory,
+        )
+        val_loader = DataLoader(
+            TensorDataset(x_val_t, y_val_t, val_domain_t),
+            batch_size=batch_size,
+            shuffle=False, # consistency
+            pin_memory=pin_memory,
+        )
+    else:
+        train_loader = DataLoader(
+            TensorDataset(x_train_t, y_train_t),
+            batch_size=batch_size,
+            shuffle=True, # avoid overfitting to sample order
+            pin_memory=pin_memory,
+        )
+        val_loader = DataLoader(
+            TensorDataset(x_val_t, y_val_t),
+            batch_size=batch_size,
+            shuffle=False, # consistency
+            pin_memory=pin_memory,
+        )
 
     best_val_loss, best_state, stale = np.inf, None, 0
     history_rows = []
@@ -196,20 +241,31 @@ def _run_lstm_training(
     for epoch in range(1, max_epochs + 1):
         model.train()
         train_loss, count = 0.0, 0
-        for x_b, y_b in train_loader:
+        for batch in train_loader:
             optimizer.zero_grad(set_to_none=True)
-            if preloaded_to_gpu:
-                x_device, y_device = x_b, y_b
+            if use_domain_one_hot:
+                x_b, y_b, domain_b = batch
+                if preloaded_to_gpu:
+                    x_device, y_device, domain_device = x_b, y_b, domain_b
+                else:
+                    x_device = x_b.to(device, non_blocking=pin_memory)
+                    y_device = y_b.to(device, non_blocking=pin_memory)
+                    domain_device = domain_b.to(device, non_blocking=pin_memory)
+                loss = criterion(model(x_device, domain_device), y_device)
             else:
-                x_device = x_b.to(device, non_blocking=pin_memory)
-                y_device = y_b.to(device, non_blocking=pin_memory)
-            loss = criterion(model(x_device), y_device)
+                x_b, y_b = batch
+                if preloaded_to_gpu:
+                    x_device, y_device = x_b, y_b
+                else:
+                    x_device = x_b.to(device, non_blocking=pin_memory)
+                    y_device = y_b.to(device, non_blocking=pin_memory)
+                loss = criterion(model(x_device), y_device)
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * len(x_b)
             count += len(x_b)
         train_loss /= count
-        val_loss = _lstm_eval_loss(model, val_loader, criterion, device)
+        val_loss = _lstm_eval_loss(model, val_loader, criterion, device, use_domain_one_hot=use_domain_one_hot)
         print(f"Epoch {epoch:03d} | train={train_loss:.6f} | val={val_loss:.6f}")
 
         if (best_val_loss - val_loss) > min_delta:
@@ -662,7 +718,20 @@ def run_ctrv_ekf_optimization(data_dir, diagnostics_dir):
     }, trials_df
 
 
-def run_minimal_lstm_optimization(diagnostics_dir):
+def _run_minimal_lstm_optimization_shared( # shared by lstm and lstm with domain one-hot
+    diagnostics_dir,
+    model_key,
+    model_label,
+    model_device,
+    checkpoint_path,
+    max_epochs,
+    patience,
+    min_delta,
+    preload_to_gpu,
+    tuning_cfg,
+    n_trials,
+    use_domain_one_hot,
+):
     #1. Build training and validation samples for each feature set specified in the config, applying context filtering and sampling as needed
     #2. Create Optuna study and optimize the objective function with TPE and early stopping
     #3. Save all trials and best parameters to CSV
@@ -671,7 +740,6 @@ def run_minimal_lstm_optimization(diagnostics_dir):
 
 
     import time
-    tuning_cfg = MINIMAL_LSTM_TUNING_CFG
     feature_sets = [tuple(fs) for fs in tuning_cfg["feature_sets"]]
     feature_set_labels = ["|".join(fs) for fs in feature_sets]
     feature_set_lookup = dict(zip(feature_set_labels, feature_sets))
@@ -685,7 +753,17 @@ def run_minimal_lstm_optimization(diagnostics_dir):
     t0 = time.perf_counter()
     print(f"[Minimal LSTM] Loading train data...")
     try:
-        x_train_all, y_train_all = _build_lstm_samples("train", all_unique_features, sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
+        if use_domain_one_hot:
+            x_train_all, y_train_all, domain_train_all = _build_lstm_samples(
+                "train",
+                all_unique_features,
+                sample_pct=TUNING_VALIDATION_PCT,
+                seed=SEED,
+                with_domain_labels=True,
+            )
+        else:
+            x_train_all, y_train_all = _build_lstm_samples("train", all_unique_features, sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
+            domain_train_all = None
         print(f"[Minimal LSTM] Train loaded in {time.perf_counter() - t0:.1f}s: {x_train_all.shape}")
     except Exception as e:
         print(f"[ERROR] Train loading failed: {type(e).__name__}: {e}")
@@ -694,7 +772,17 @@ def run_minimal_lstm_optimization(diagnostics_dir):
     t0 = time.perf_counter()
     print(f"[Minimal LSTM] Loading val data...")
     try:
-        x_val_all, y_val_all = _build_lstm_samples("val", all_unique_features, sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
+        if use_domain_one_hot:
+            x_val_all, y_val_all, domain_val_all = _build_lstm_samples(
+                "val",
+                all_unique_features,
+                sample_pct=TUNING_VALIDATION_PCT,
+                seed=SEED,
+                with_domain_labels=True,
+            )
+        else:
+            x_val_all, y_val_all = _build_lstm_samples("val", all_unique_features, sample_pct=TUNING_VALIDATION_PCT, seed=SEED)
+            domain_val_all = None
         print(f"[Minimal LSTM] Val loaded in {time.perf_counter() - t0:.1f}s: {x_val_all.shape}")
     except Exception as e:
         print(f"[ERROR] Val loading failed: {type(e).__name__}: {e}")
@@ -705,18 +793,25 @@ def run_minimal_lstm_optimization(diagnostics_dir):
         col_indices = [all_unique_features.index(c) for c in feature_set]
         x_train = x_train_all[:, :, col_indices]
         x_val = x_val_all[:, :, col_indices]
-        data_by_feature_set[feature_set_label] = (x_train, y_train_all, x_val, y_val_all)
+        data_by_feature_set[feature_set_label] = (
+            x_train,
+            y_train_all,
+            x_val,
+            y_val_all,
+            domain_train_all,
+            domain_val_all,
+        )
         print(
             f"[Minimal LSTM] Feature set '{feature_set_label}': "
             f"{x_train.shape[0]} train samples, {x_val.shape[0]} val samples"
         )
 
-    n_gpus = torch.cuda.device_count() if MINIMAL_LSTM_DEVICE.startswith("cuda") else 0 # use multiple GPUs if available
+    n_gpus = torch.cuda.device_count() if model_device.startswith("cuda") else 0 # use multiple GPUs if available
 
     def objective(trial):
         feature_set_label = trial.suggest_categorical("feature_set", feature_set_labels)
         feature_columns = feature_set_lookup[feature_set_label]
-        x_train, y_train, x_val, y_val = data_by_feature_set[feature_set_label]
+        x_train, y_train, x_val, y_val, domain_train, domain_val = data_by_feature_set[feature_set_label]
         params = {
             "hidden_size": trial.suggest_categorical("hidden_size", tuning_cfg["hidden_size"]),
             "num_layers": trial.suggest_categorical("num_layers", tuning_cfg["num_layers"]),
@@ -724,24 +819,29 @@ def run_minimal_lstm_optimization(diagnostics_dir):
             "learning_rate": trial.suggest_float("learning_rate", tuning_cfg["learning_rate_min"], tuning_cfg["learning_rate_max"], log=True),
             "batch_size": trial.suggest_categorical("batch_size", tuning_cfg["batch_size"]),
         }
-        device_str = f"cuda:{trial.number % n_gpus}" if n_gpus > 1 else MINIMAL_LSTM_DEVICE
-        history_path = diagnostics_dir / "minimal_lstm_history" / f"minimal_lstm_trial_{trial.number:04d}.csv"
+        device_str = f"cuda:{trial.number % n_gpus}" if n_gpus > 1 else model_device
+        history_path = diagnostics_dir / f"{model_key}_history" / f"{model_key}_trial_{trial.number:04d}.csv"
         return _run_lstm_training(
             params, feature_columns, x_train, y_train, x_val, y_val,
             device_str=device_str,
-            max_epochs=MINIMAL_LSTM_MAX_EPOCHS,
-            patience=MINIMAL_LSTM_PATIENCE,
-            min_delta=MINIMAL_LSTM_MIN_DELTA,
+            preload_to_gpu=preload_to_gpu,
+            max_epochs=max_epochs,
+            patience=patience,
+            min_delta=min_delta,
+            train_domains=domain_train,
+            val_domains=domain_val,
+            use_domain_one_hot=use_domain_one_hot,
             trial=trial,
             history_csv_path=history_path,
         )
 
     #sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=10, multivariate=False)
     sampler = optuna.samplers.TPESampler(seed=SEED, n_startup_trials=len(feature_set_labels) + 10, multivariate=False) # False concerns the HP, not the Model parameters, so set to false for "small" number of trials
+    pruner_cfg = tuning_cfg.get("pruner", {})
     pruner = optuna.pruners.SuccessiveHalvingPruner(
-        min_resource=MINIMAL_LSTM_PRUNER_MIN_RESOURCE,
-        reduction_factor=MINIMAL_LSTM_PRUNER_REDUCTION_FACTOR,
-        min_early_stopping_rate=MINIMAL_LSTM_PRUNER_MIN_EARLY_STOPPING_RATE,
+        min_resource=int(pruner_cfg.get("min_resource", 8)),
+        reduction_factor=int(pruner_cfg.get("reduction_factor", 2)),
+        min_early_stopping_rate=int(pruner_cfg.get("min_early_stopping_rate", 0)),
     )
     study = optuna.create_study(
         study_name="minimal_lstm_val_tpe",
@@ -761,45 +861,49 @@ def run_minimal_lstm_optimization(diagnostics_dir):
     for label in feature_set_labels:
         study.enqueue_trial({"feature_set": label, **fs_seed})
 
-    print(f"[Minimal LSTM] Starting Optuna optimization with {MINIMAL_LSTM_N_TRIALS} trials...")
+    print(f"[{model_label}] Starting Optuna optimization with {n_trials} trials...")
     study.optimize(
         objective,
-        n_trials=MINIMAL_LSTM_N_TRIALS,
+        n_trials=n_trials,
         n_jobs=max(1, n_gpus),
         callbacks=[
             RMSEEarlyStoppingCallback(patience=EARLY_STOPPING_PATIENCE, min_delta=EARLY_STOPPING_MIN_DELTA),
-            TrialProgressCallback(model_label="Minimal LSTM", total_trials=MINIMAL_LSTM_N_TRIALS),
+            TrialProgressCallback(model_label=model_label, total_trials=n_trials),
         ],
     )
-    study_path = diagnostics_dir / "minimal_lstm_study.pkl"
+    study_path = diagnostics_dir / f"{model_key}_study.pkl"
     joblib.dump(study, study_path)
-    print(f"[Minimal LSTM] Optimization complete. Best val_loss: {study.best_value:.6f}")
-    print(f"[Minimal LSTM] Study saved to {study_path}")
-    save_study_plots(study, diagnostics_dir / "optuna_plots", "minimal_lstm")
+    print(f"[{model_label}] Optimization complete. Best val_loss: {study.best_value:.6f}")
+    print(f"[{model_label}] Study saved to {study_path}")
+    save_study_plots(study, diagnostics_dir / "optuna_plots", model_key)
 
     trials_df = study.trials_dataframe(attrs=("number", "value", "params", "state"))
-    trials_df["model_key"] = "minimal_lstm"
-    trials_df["model_label"] = "Minimal LSTM"
+    trials_df["model_key"] = model_key
+    trials_df["model_label"] = model_label
     trials_df["sample_pct"] = TUNING_VALIDATION_PCT
-    csv_path = diagnostics_dir / "tuning_minimal_lstm_val.csv"
+    csv_path = diagnostics_dir / f"tuning_{model_key}_val.csv"
     trials_df.to_csv(csv_path, index=False)
 
     best = study.best_trial
     best_feature_columns = feature_set_lookup[best.params["feature_set"]]
-    best_x_train, best_y_train, best_x_val, best_y_val = data_by_feature_set[best.params["feature_set"]]
+    best_x_train, best_y_train, best_x_val, best_y_val, best_domain_train, best_domain_val = data_by_feature_set[best.params["feature_set"]]
     _run_lstm_training( # retrain best model on full training set 
         best.params, best_feature_columns, best_x_train, best_y_train, best_x_val, best_y_val,
-        device_str=MINIMAL_LSTM_DEVICE,
-        max_epochs=MINIMAL_LSTM_MAX_EPOCHS,
-        patience=MINIMAL_LSTM_PATIENCE,
-        min_delta=MINIMAL_LSTM_MIN_DELTA,
-        checkpoint_path=PROJECT_ROOT / MINIMAL_LSTM_CHECKPOINT,
-        history_csv_path=diagnostics_dir / "minimal_lstm_history" / "minimal_lstm_best_retrain.csv",
+        device_str=model_device,
+        preload_to_gpu=preload_to_gpu,
+        max_epochs=max_epochs,
+        patience=patience,
+        min_delta=min_delta,
+        train_domains=best_domain_train,
+        val_domains=best_domain_val,
+        use_domain_one_hot=use_domain_one_hot,
+        checkpoint_path=PROJECT_ROOT / checkpoint_path,
+        history_csv_path=diagnostics_dir / f"{model_key}_history" / f"{model_key}_best_retrain.csv",
     )
 
     return {
-        "model_key": "minimal_lstm",
-        "model_label": "Minimal LSTM",
+        "model_key": model_key,
+        "model_label": model_label,
         "best_hidden_size": int(best.params["hidden_size"]),
         "best_num_layers": int(best.params["num_layers"]),
         "best_dropout": float(best.params["dropout"]),
@@ -810,6 +914,40 @@ def run_minimal_lstm_optimization(diagnostics_dir):
         "trials_csv": str(csv_path),
         "sample_pct": TUNING_VALIDATION_PCT,
     }, trials_df
+
+
+def run_minimal_lstm_optimization(diagnostics_dir):
+    return _run_minimal_lstm_optimization_shared(
+        diagnostics_dir=diagnostics_dir,
+        model_key="minimal_lstm",
+        model_label="Minimal LSTM",
+        model_device=MINIMAL_LSTM_DEVICE,
+        checkpoint_path=MINIMAL_LSTM_CHECKPOINT,
+        max_epochs=MINIMAL_LSTM_MAX_EPOCHS,
+        patience=MINIMAL_LSTM_PATIENCE,
+        min_delta=MINIMAL_LSTM_MIN_DELTA,
+        preload_to_gpu=MINIMAL_LSTM_PRELOAD_TO_GPU,
+        tuning_cfg=MINIMAL_LSTM_TUNING_CFG,
+        n_trials=MINIMAL_LSTM_N_TRIALS,
+        use_domain_one_hot=False,
+    )
+
+
+def run_minimal_lstm_domain_optimization(diagnostics_dir):
+    return _run_minimal_lstm_optimization_shared(
+        diagnostics_dir=diagnostics_dir,
+        model_key="minimal_lstm_domain",
+        model_label="Minimal LSTM Domain",
+        model_device=MINIMAL_LSTM_DOMAIN_DEVICE,
+        checkpoint_path=MINIMAL_LSTM_DOMAIN_CHECKPOINT,
+        max_epochs=MINIMAL_LSTM_DOMAIN_MAX_EPOCHS,
+        patience=MINIMAL_LSTM_DOMAIN_PATIENCE,
+        min_delta=MINIMAL_LSTM_DOMAIN_MIN_DELTA,
+        preload_to_gpu=MINIMAL_LSTM_DOMAIN_PRELOAD_TO_GPU,
+        tuning_cfg=MINIMAL_LSTM_TUNING_CFG,
+        n_trials=MINIMAL_LSTM_N_TRIALS,
+        use_domain_one_hot=True,
+    )
 
 
 def _run_model_job(result_queue, model_key, model_label, model_cls, data_dir, diagnostics_dir, model_kwargs=None):
@@ -899,8 +1037,8 @@ if __name__ == "__main__":
             },
         ))
 
-    if not standard_jobs and not RUN_HYBRID and not RUN_KALMAN and not RUN_CTRV_EKF and not RUN_MINIMAL_LSTM:
-        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_CTRV_ARC and/or RUN_TIREX_LSTM and/or RUN_HYBRID and/or RUN_KALMAN and/or RUN_CTRV_EKF and/or RUN_MINIMAL_LSTM to True.")
+    if not standard_jobs and not RUN_HYBRID and not RUN_KALMAN and not RUN_CTRV_EKF and not RUN_MINIMAL_LSTM and not RUN_MINIMAL_LSTM_DOMAIN:
+        print("No models selected. Set RUN_CV and/or RUN_CTRV and/or RUN_CTRV_ARC and/or RUN_TIREX_LSTM and/or RUN_HYBRID and/or RUN_KALMAN and/or RUN_CTRV_EKF and/or RUN_MINIMAL_LSTM and/or RUN_MINIMAL_LSTM_DOMAIN to True.")
         raise SystemExit(0)
 
     best_rows = []
@@ -912,6 +1050,7 @@ if __name__ == "__main__":
         + (1 if RUN_CTRV_EKF else 0)
         + (1 if RUN_HYBRID else 0)
         + (1 if RUN_MINIMAL_LSTM else 0)
+        + (1 if RUN_MINIMAL_LSTM_DOMAIN else 0)
     )
     completed_steps = 0
 
@@ -1004,6 +1143,14 @@ if __name__ == "__main__":
         all_trials.append(trials_df)
         completed_steps += 1
         print(f"[Progress] {completed_steps}/{total_steps} steps completed (Minimal LSTM)")
+
+    if RUN_MINIMAL_LSTM_DOMAIN:
+        best_row, trials_df = run_minimal_lstm_domain_optimization(diagnostics_dir)
+        best_rows = [row for row in best_rows if row.get("model_key") != "minimal_lstm_domain"]
+        best_rows.append(best_row)
+        all_trials.append(trials_df)
+        completed_steps += 1
+        print(f"[Progress] {completed_steps}/{total_steps} steps completed (Minimal LSTM Domain)")
 
     best_df = pd.DataFrame(best_rows)
     best_path = diagnostics_dir / "tuning_best_params_val.csv"
