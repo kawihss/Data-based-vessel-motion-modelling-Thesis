@@ -1,8 +1,8 @@
 run:
-  name: baseline_full_full_100
+  name: OHE_lstm_full_channel_100
   description: thesis run. testing HP selection not separate
   seed: 42
-  sample_pct: 1 #of 100
+  sample_pct: 100 #of 100
 
 sampling:
   tuning_validation_pct: 100 #of 100
@@ -14,8 +14,8 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: river # null, not none
-  context_filter_evaluation: river # null
+  context_filter_tuning: channel # null, not none
+  context_filter_evaluation: channel # null
 
 
 evaluation:
@@ -29,8 +29,8 @@ models:
   kalman: false
   ctrv_ekf: false
   tirex_lstm: false
-  minimal_lstm: true
-  minimal_lstm_domain: false
+  minimal_lstm: false
+  minimal_lstm_domain: true
   chronos2_zero_shot: false
   tirex:
     model_name: NX-AI/TiRex
@@ -110,11 +110,12 @@ plotting:
   step_duration_s: 30
   models:
     constant_velocity: true
-    ctrv: true
-    ctrv_arc: true
+    ctrv: false
+    ctrv_arc: false
     hybrid_cv_ctrv: false
     kalman: false
     ctrv_ekf: false
     tirex_lstm: false
     chronos2_zero_shot: false
     minimal_lstm: false
+    minimal_lstm_domain: true

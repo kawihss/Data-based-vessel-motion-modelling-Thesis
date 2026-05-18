@@ -48,11 +48,14 @@ class MinimalLSTMNet(nn.Module):
 
 class MinimalLSTMDomainNet(MinimalLSTMNet):
     def __init__(self, input_size: int, hidden_size: int, num_layers: int, dropout: float, pred_len: int):
-        self.base_hidden_size = hidden_size
+        # Keep total recurrent state size identical to the baseline model.
+        # The domain one-hot occupies `domain_size` slots, the remaining slots are learned.
         self.domain_size = 4
+        self.base_hidden_size = hidden_size - self.domain_size
+   
         super().__init__(
             input_size=input_size,
-            hidden_size=hidden_size + self.domain_size,
+            hidden_size=hidden_size,
             num_layers=num_layers,
             dropout=dropout,
             pred_len=pred_len,
@@ -60,7 +63,6 @@ class MinimalLSTMDomainNet(MinimalLSTMNet):
     def _build_initial_state(self, x: torch.Tensor, domain_idx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         batch_size = x.size(0)
         num_layers = self.lstm.num_layers
-        hidden_size = self.lstm.hidden_size
 
         domain_ids = domain_idx.to(device=x.device, dtype=torch.long)
         if domain_ids.dim() == 0:
@@ -69,12 +71,12 @@ class MinimalLSTMDomainNet(MinimalLSTMNet):
         one_hot = one_hot.unsqueeze(0).expand(num_layers, -1, -1)
 
         h0_base = torch.zeros(
-            (num_layers, batch_size, hidden_size - self.domain_size),
+            (num_layers, batch_size, self.base_hidden_size),
             dtype=x.dtype,
             device=x.device,
         )
         c0_base = torch.zeros(
-            (num_layers, batch_size, hidden_size - self.domain_size),
+            (num_layers, batch_size, self.base_hidden_size),
             dtype=x.dtype,
             device=x.device,
         )
