@@ -53,6 +53,7 @@ MINIMAL_LSTM_DOMAIN_MAX_EPOCHS = int(MINIMAL_LSTM_DOMAIN_CFG.get("max_epochs", 6
 MINIMAL_LSTM_DOMAIN_PATIENCE = int(MINIMAL_LSTM_DOMAIN_CFG.get("patience", 8))
 MINIMAL_LSTM_DOMAIN_MIN_DELTA = float(MINIMAL_LSTM_DOMAIN_CFG.get("min_delta", 1e-4))
 MINIMAL_LSTM_TUNING_CFG = CONFIG["tuning"].get("minimal_lstm", {})
+MINIMAL_LSTM_DOMAIN_TUNING_CFG = CONFIG["tuning"].get("minimal_lstm_domain", MINIMAL_LSTM_TUNING_CFG)
 MINIMAL_LSTM_PRUNER_CFG = MINIMAL_LSTM_TUNING_CFG.get("pruner", {})
 MINIMAL_LSTM_PRUNER_MIN_RESOURCE = int(MINIMAL_LSTM_PRUNER_CFG.get("min_resource", 5))
 MINIMAL_LSTM_PRUNER_REDUCTION_FACTOR = int(MINIMAL_LSTM_PRUNER_CFG.get("reduction_factor", 3))
@@ -857,6 +858,15 @@ def _run_minimal_lstm_optimization_shared( # shared by lstm and lstm with domain
     "learning_rate": 0.0004,
     "batch_size": 256,
     }
+    
+    fs_seed = {  #overwritten only for fixed size, comment out for lstm training
+        "hidden_size": int(tuning_cfg["hidden_size"][0]),
+        "num_layers": int(tuning_cfg["num_layers"][0]),
+        "dropout": float(tuning_cfg["dropout_min"]),
+        "learning_rate": float(tuning_cfg["learning_rate_min"]),
+        "batch_size": int(tuning_cfg["batch_size"][0]),
+    }
+
 
     for label in feature_set_labels:
         study.enqueue_trial({"feature_set": label, **fs_seed})
@@ -944,7 +954,7 @@ def run_minimal_lstm_domain_optimization(diagnostics_dir):
         patience=MINIMAL_LSTM_DOMAIN_PATIENCE,
         min_delta=MINIMAL_LSTM_DOMAIN_MIN_DELTA,
         preload_to_gpu=MINIMAL_LSTM_DOMAIN_PRELOAD_TO_GPU,
-        tuning_cfg=MINIMAL_LSTM_TUNING_CFG,
+        tuning_cfg=MINIMAL_LSTM_DOMAIN_TUNING_CFG,
         n_trials=MINIMAL_LSTM_N_TRIALS,
         use_domain_one_hot=True,
     )

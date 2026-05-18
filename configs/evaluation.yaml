@@ -1,5 +1,5 @@
 run:
-  name: OHE_lstm_full_channel_100
+  name: noHPO_OHE_lstm_full_harbour_100
   description: thesis run. testing HP selection not separate
   seed: 42
   sample_pct: 100 #of 100
@@ -14,8 +14,8 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: channel # null, not none
-  context_filter_evaluation: channel # null
+  context_filter_tuning: harbour # null, not none
+  context_filter_evaluation: harbour # null
 
 
 evaluation:
@@ -73,38 +73,29 @@ tuning:
   n_trials_hybrid: 100
   n_trials_kalman: 100
   n_trials_ctrv_ekf: 100
-  n_trials_minimal_lstm: 100 # consider reduction_factor^n + nseed + nstartup_trials for TPE sampler startup . use big 100 and hope for early stopping
+  n_trials_minimal_lstm: 1
   early_stopping_patience: 50
   early_stopping_min_delta: 0.0001
   minimal_lstm:
-    hidden_size: [64, 128, 256]
-    num_layers: [2] #[1, 2]
-    dropout_min: 0.1
-    dropout_max: 0.4
-    learning_rate_min: 0.0001
-    learning_rate_max: 0.01
-    batch_size: [128, 256, 512]
-    feature_sets: # all permutations as specified in thesis text
-      - [dx_norm, dy_norm]
-      - [dx_norm, dy_norm, sog_norm]
-      - [dx_norm, dy_norm, rot_norm]
-      - [dx_norm, dy_norm, cog_sin_norm, cog_cos_norm]
-      - [dx_norm, dy_norm, sog_norm, rot_norm]
-      - [dx_norm, dy_norm, sog_norm, cog_sin_norm, cog_cos_norm]
-      - [dx_norm, dy_norm, rot_norm, cog_sin_norm, cog_cos_norm]
-      - [dx_norm, dy_norm, sog_norm, rot_norm, cog_sin_norm, cog_cos_norm]
-      - [dx_norm, dy_norm, dt_norm]
-      - [dx_norm, dy_norm, sog_norm, dt_norm]
-      - [dx_norm, dy_norm, rot_norm, dt_norm]
-      - [dx_norm, dy_norm, cog_sin_norm, cog_cos_norm, dt_norm]
-      - [dx_norm, dy_norm, sog_norm, rot_norm, dt_norm]
+    hidden_size: [256]
+    num_layers: [2]
+    dropout_min: 0.29045296662444414
+    dropout_max: 0.29045296662444414
+    learning_rate_min: 0.0005529869160475425
+    learning_rate_max: 0.0005529869160475425
+    batch_size: [128]
+    feature_sets:
       - [dx_norm, dy_norm, sog_norm, cog_sin_norm, cog_cos_norm, dt_norm]
-      - [dx_norm, dy_norm, rot_norm, cog_sin_norm, cog_cos_norm, dt_norm]
-      - [dx_norm, dy_norm, sog_norm, rot_norm, cog_sin_norm, cog_cos_norm, dt_norm]
-    pruner:
-      min_resource: 8
-      reduction_factor: 2
-      min_early_stopping_rate: 0
+  minimal_lstm_domain:
+    hidden_size: [256]
+    num_layers: [2]
+    dropout_min: 0.29045296662444414
+    dropout_max: 0.29045296662444414
+    learning_rate_min: 0.0005529869160475425
+    learning_rate_max: 0.0005529869160475425
+    batch_size: [128]
+    feature_sets:
+      - [dx_norm, dy_norm, sog_norm, cog_sin_norm, cog_cos_norm, dt_norm]
 
 plotting:
   step_duration_s: 30
