@@ -37,6 +37,7 @@ PLOT_CTRV_EKF = bool(PLOT_FLAGS["ctrv_ekf"])
 PLOT_TIREX_LSTM = bool(PLOT_FLAGS["tirex_lstm"])
 PLOT_CHRONOS2_ZERO_SHOT = bool(PLOT_FLAGS.get("chronos2_zero_shot", False))
 PLOT_MINIMAL_LSTM = bool(PLOT_FLAGS.get("minimal_lstm", False))
+PLOT_MINIMAL_LSTM_DOMAIN = bool(PLOT_FLAGS.get("minimal_lstm_domain", PLOT_FLAGS.get("embedded_lstm", False)))
 
 _ALL_MODEL_LABELS = {
     "constant_velocity": "Constant Velocity",
@@ -48,6 +49,7 @@ _ALL_MODEL_LABELS = {
     "tirex_lstm": "TiRex LSTM",
     "chronos2_zero_shot": "Chronos-2 Zero-Shot",
     "minimal_lstm": "Minimal LSTM",
+    "minimal_lstm_domain": "OHE LSTM",
 }
 _MODEL_FLAGS = {
     "constant_velocity": PLOT_CONSTANT_VELOCITY,
@@ -59,6 +61,7 @@ _MODEL_FLAGS = {
     "tirex_lstm": PLOT_TIREX_LSTM,
     "chronos2_zero_shot": PLOT_CHRONOS2_ZERO_SHOT,
     "minimal_lstm": PLOT_MINIMAL_LSTM,
+    "minimal_lstm_domain": PLOT_MINIMAL_LSTM_DOMAIN,
 }
 ALL_MODEL_LABELS = {k: v for k, v in _ALL_MODEL_LABELS.items() if _MODEL_FLAGS[k]}
 
@@ -676,6 +679,32 @@ def plot_tuning_results():
                 model_label=model_label,
                 output_path=plot_path,
             )
+        elif model_key == "minimal_lstm_domain":
+            csv_path = tuning_diagnostics_dir / "tuning_minimal_lstm_domain_val.csv"
+            if not csv_path.exists():
+                print(f"[tuning] {csv_path} not found, skipping Minimal LSTM Domain.")
+                continue
+            df = pd.read_csv(csv_path)
+            plot_convergence(
+                df=df,
+                model_label=model_label,
+                output_path=plots_dir / "tuning_minimal_lstm_domain_convergence.png",
+            )
+            plot_path = plots_dir / "tuning_minimal_lstm_domain_val_plot.png"
+            best_params = {
+                "best_hidden_size": int(row["best_hidden_size"]),
+                "best_num_layers": int(row["best_num_layers"]),
+                "best_dropout": float(row["best_dropout"]),
+                "best_learning_rate": float(row["best_learning_rate"]),
+                "best_batch_size": int(row["best_batch_size"]),
+            }
+            plot_minimal_lstm_results(
+                df=df,
+                best_params=best_params,
+                best_rmse=float(row["best_val_loss"]),
+                model_label=model_label,
+                output_path=plot_path,
+            )
         else:
             csv_path = tuning_diagnostics_dir / f"tuning_{model_key}_val.csv"
             if not csv_path.exists():
@@ -688,6 +717,9 @@ def plot_tuning_results():
                 output_path=plots_dir / f"tuning_{model_key}_convergence.png",
             )
             plot_path = plots_dir / f"tuning_{model_key}_val_plot.png"
+            if "best_velocity_steps" not in row.index:
+                print(f"[tuning] best_velocity_steps missing for {model_label} ({model_key}), skipping generic tuning plot.")
+                continue
             plot_results(
                 df=df,
                 best_steps=int(row["best_velocity_steps"]),
