@@ -1,5 +1,6 @@
 import sys
 import os
+import random
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -79,7 +80,10 @@ SEED = int(CONFIG["run"]["seed"])
 SAMPLE_PCT = int(CONFIG["run"]["sample_pct"])
 TUNING_VALIDATION_PCT = int(get_sampling_value(CONFIG, "tuning_validation_pct"))
 
+random.seed(SEED)
 np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
 
 
 def _build_lstm_samples(split, feature_columns, sample_pct=100, seed=SEED, with_domain_labels=False):

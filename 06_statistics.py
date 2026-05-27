@@ -58,11 +58,10 @@ matplotlib.use('Agg') # prevents segfault on VERA
 # Create output folder if it doesn't exist
 os.makedirs("output/06_statistics", exist_ok=True)
 
-print("Counting raw AIS messages...")
-total_raw = sum(len(chunk) for file in glob.glob("output/01_raw/*.csv") 
-                for chunk in pd.read_csv(file, usecols=[0], chunksize=1000000))
-
-print(f"Total raw messages: {total_raw}")
+# total_raw = sum(len(chunk) for file in glob.glob("output/01_raw/*.csv") 
+#                 for chunk in pd.read_csv(file, usecols=[0], chunksize=1000000))
+total_raw = 153681423
+print(f"Total raw messages: {total_raw} (hardcoded)")
 
 # Process data
 print("Processing final trajectories...")
@@ -136,29 +135,26 @@ df_plot = pd.concat(plot_data, ignore_index=True)
 
 # Histograms
 stations = ['Kiel', 'Bremerhaven', 'Wedel']
-fig, axes = plt.subplots(nrows=4, ncols=len(stations), figsize=(18, 16))
+fig, axes = plt.subplots(nrows=3, ncols=len(stations), figsize=(18, 12))
 
 for i, station in enumerate(stations):
     station_data = df_plot[df_plot['station'] == station]
     
-    # sampled distributions for SOG, COG, ROT
+    # sampled distributions for SOG, ROT
     axes[0, i].hist(station_data['sog'].dropna(), bins=40, color='blue', alpha=0.6, density=True)
     axes[0, i].set_title(f"{station} - SOG (knots)")
-    
-    axes[1, i].hist(station_data['cog'].dropna(), bins=40, color='orange', alpha=0.6, density=True)
-    axes[1, i].set_title(f"{station} - COG (degrees)")
 
-    axes[2, i].hist(station_data['rot'].dropna(), bins=40, color='green', alpha=0.6, density=True)
-    axes[2, i].set_title(f"{station} - ROT (deg/min)")
+    axes[1, i].hist(station_data['rot'].dropna(), bins=40, color='green', alpha=0.6, density=True)
+    axes[1, i].set_title(f"{station} - ROT (deg/min)")
 
     # distinct trajectory counts for context
     counts_series = final_context_counts.get(station, pd.Series(dtype=int))
     
     if not counts_series.empty:
         counts_sorted = counts_series.sort_values(ascending=False)
-        ax_bar = counts_sorted.plot(kind='bar', ax=axes[3, i], color='purple', alpha=0.6)
-        axes[3, i].set_title(f"{station} - Unique Trajectories per Context")
-        axes[3, i].set_xlabel("Distinct Trajectories (Unsampled)")
+        ax_bar = counts_sorted.plot(kind='bar', ax=axes[2, i], color='purple', alpha=0.6)
+        axes[2, i].set_title(f"{station} - Unique Trajectories per Context")
+        axes[2, i].set_xlabel("Distinct Trajectories (Unsampled)")
         
         for container in ax_bar.containers:
             ax_bar.bar_label(container, fmt='%.0f')
@@ -167,7 +163,27 @@ plt.tight_layout()
 plt.savefig("output/06_statistics/simple_histograms.pdf")
 print("Saved histograms to output/06_statistics/simple_histograms.pdf", flush=True)
 
-plt.close(fig) 
+plt.close(fig)
+
+
+# SOG and ROT per context
+contexts = sorted(df_plot['context'].dropna().unique())
+fig_ctx, axes_ctx = plt.subplots(nrows=2, ncols=len(contexts), figsize=(5 * len(contexts), 8))
+
+for i, ctx in enumerate(contexts):
+    ctx_data = df_plot[df_plot['context'] == ctx]
+
+    axes_ctx[0, i].hist(ctx_data['sog'].dropna(), bins=40, color='blue', alpha=0.6, density=True)
+    axes_ctx[0, i].set_title(f"{ctx} - SOG (knots)")
+
+    axes_ctx[1, i].hist(ctx_data['rot'].dropna(), bins=40, color='green', alpha=0.6, density=True)
+    axes_ctx[1, i].set_title(f"{ctx} - ROT (deg/min)")
+
+plt.tight_layout()
+plt.savefig("output/06_statistics/context_histograms.pdf")
+print("Saved context histograms to output/06_statistics/context_histograms.pdf", flush=True)
+
+plt.close(fig_ctx)
 
 
 # COG Polar Projection Heatmap
