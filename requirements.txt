@@ -33,3 +33,4 @@ accelerate
 chronos-forecasting>=2.0
 tirex-ts
 xlstm
+scikit-posthocs
