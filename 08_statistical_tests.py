@@ -9,7 +9,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 
 RUN_DIRS = [
     PROJECT_ROOT / "output/08_baseline_results/runs/baseline_full_full_100",
-    #PROJECT_ROOT / "output/08_baseline_results/runs/foundation_full_full_100",
+    PROJECT_ROOT / "output/08_baseline_results/runs/foundation_full_full_100",
+    PROJECT_ROOT / "output/08_baseline_results/runs/lstm_full_full_100",
+    PROJECT_ROOT / "output/08_baseline_results/runs/OHE_lstm_full_full_100",
+    #PROJECT_ROOT / "output/08_baseline_results/runs/noHPO_OHE_lstm_full_full_100", # 2 x same name breaks it
+
+
+    #add comp for n_n etc untereinander?..
 ]
 OUTPUT_DIR = PROJECT_ROOT / "output/08_baseline_results/statistical_tests/full_full"
 SPLIT = "test"
@@ -56,19 +62,7 @@ if __name__ == "__main__":
         nemenyi_p = sp.posthoc_nemenyi_friedman(matrix)
         nemenyi_p.to_csv(OUTPUT_DIR / "nemenyi_pvalues.csv", float_format="%.16e")
         (nemenyi_p < ALPHA).astype(int).to_csv(OUTPUT_DIR / "nemenyi_significant.csv")
-    # plot 1: mean ranks bar chart 
-    fig, ax = plt.subplots(figsize=(7, 0.55 * len(ranks_df) + 1.2))
-    bars = ax.barh(ranks_df["model_key"][::-1], ranks_df["mean_rank"][::-1], color="steelblue")
-    ax.bar_label(bars, fmt="%.3f", padding=4, fontsize=9)
-    ax.set_xlabel("Mean rank (lower = better)")
-    ax.set_title(f"Friedman mean ranks  —  χ²={chi2:.2f}, p={p_value:.2e}")
-    ax.set_xlim(1, len(matrix.columns) + 0.6)
-    fig.tight_layout()
-    fig.savefig(OUTPUT_DIR / "mean_ranks.png", dpi=150)
-    plt.close(fig)
-
-    
-    #plot 2: critical difference diagram
+    # critical difference diagram
     if significant:
         fig, ax = plt.subplots(figsize=(8, 2 + 0.35 * len(mean_ranks)))
         sp.critical_difference_diagram(mean_ranks, nemenyi_p, ax=ax, alpha=ALPHA)
