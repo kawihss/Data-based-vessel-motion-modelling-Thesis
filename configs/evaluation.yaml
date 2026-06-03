@@ -1,5 +1,5 @@
 run:
-  name: noHPO_OHE_lstm_full_harbour_100
+  name: foundation_channel_full_100
   description: thesis run. testing HP selection not separate
   seed: 42
   sample_pct: 100 #of 100
@@ -14,8 +14,8 @@ paths:
 data:
   parquet_dir: output/07_parquet
   split: test
-  context_filter_tuning: harbour # null, not none
-  context_filter_evaluation: harbour # null
+  context_filter_tuning: channel # null, not none
+  context_filter_evaluation: null # null
 
 
 evaluation:
@@ -28,10 +28,10 @@ models:
   hybrid: false
   kalman: false
   ctrv_ekf: false
-  tirex_lstm: false
+  tirex_lstm: true
   minimal_lstm: false
-  minimal_lstm_domain: true
-  chronos2_zero_shot: false
+  minimal_lstm_domain: false
+  chronos2_zero_shot: true
   tirex:
     model_name: NX-AI/TiRex
     device: cuda # null-> auto-detect, or specify "cpu" or "cuda"
@@ -100,13 +100,13 @@ tuning:
 plotting:
   step_duration_s: 30
   models:
-    constant_velocity: true
+    constant_velocity: false
     ctrv: false
     ctrv_arc: false
     hybrid_cv_ctrv: false
     kalman: false
     ctrv_ekf: false
-    tirex_lstm: false
-    chronos2_zero_shot: false
+    tirex_lstm: true
+    chronos2_zero_shot: true
     minimal_lstm: false
-    minimal_lstm_domain: true
+    minimal_lstm_domain: false

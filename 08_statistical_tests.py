@@ -7,19 +7,101 @@ import scikit_posthocs as sp
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-RUN_DIRS = [
+RUN_DIRS = [ # EXPERIMENT 1 full_full_100
     PROJECT_ROOT / "output/08_baseline_results/runs/baseline_full_full_100",
     PROJECT_ROOT / "output/08_baseline_results/runs/foundation_full_full_100",
     PROJECT_ROOT / "output/08_baseline_results/runs/lstm_full_full_100",
     PROJECT_ROOT / "output/08_baseline_results/runs/OHE_lstm_full_full_100",
     #PROJECT_ROOT / "output/08_baseline_results/runs/noHPO_OHE_lstm_full_full_100", # 2 x same name breaks it
-
-
     #add comp for n_n etc untereinander?..
 ]
+
+
+# RUN_DIRS = [ # EXPERIMENT 2 harbour
+#     PROJECT_ROOT / "output/08_baseline_results/runs/baseline_full_harbour_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/baseline_harbour_harbour_100",
+#
+#     PROJECT_ROOT / "output/08_baseline_results/runs/foundation_full_harbour_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/foundation_harbour_harbour_100",
+#
+#     PROJECT_ROOT / "output/08_baseline_results/runs/lstm_full_harbour_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/lstm_harbour_harbour_100",
+#
+#     PROJECT_ROOT / "output/08_baseline_results/runs/OHE_lstm_full_harbour_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/OHE_lstm_harbour_harbour_100",
+# ]
+
+RUN_DIRS = [ # EXPERIMENT 2 channel
+    PROJECT_ROOT / "output/08_baseline_results/runs/baseline_full_channel_100",
+    PROJECT_ROOT / "output/08_baseline_results/runs/baseline_channel_channel_100",
+
+    PROJECT_ROOT / "output/08_baseline_results/runs/foundation_full_channel_100",
+    PROJECT_ROOT / "output/08_baseline_results/runs/foundation_channel_channel_100",
+
+    PROJECT_ROOT / "output/08_baseline_results/runs/lstm_full_channel_100",
+    PROJECT_ROOT / "output/08_baseline_results/runs/lstm_channel_channel_100",
+
+    PROJECT_ROOT / "output/08_baseline_results/runs/OHE_lstm_full_channel_100",
+    PROJECT_ROOT / "output/08_baseline_results/runs/OHE_lstm_channel_channel_100",
+]
+
+# RUN_DIRS = [ # EXPERIMENT 2 lock
+#     PROJECT_ROOT / "output/08_baseline_results/runs/baseline_full_lock_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/baseline_lock_lock_100",
+#
+#     PROJECT_ROOT / "output/08_baseline_results/runs/foundation_full_lock_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/foundation_lock_lock_100",
+#
+#     PROJECT_ROOT / "output/08_baseline_results/runs/lstm_full_lock_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/lstm_lock_lock_100",
+#
+#     PROJECT_ROOT / "output/08_baseline_results/runs/OHE_lstm_full_lock_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/OHE_lstm_lock_lock_100",
+# ]
+
+# RUN_DIRS = [ # EXPERIMENT 2 river
+#     PROJECT_ROOT / "output/08_baseline_results/runs/baseline_full_river_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/baseline_river_river_100",
+#
+#     PROJECT_ROOT / "output/08_baseline_results/runs/foundation_full_river_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/foundation_river_river_100",
+#
+#     PROJECT_ROOT / "output/08_baseline_results/runs/lstm_full_river_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/lstm_river_river_100",
+#
+#     PROJECT_ROOT / "output/08_baseline_results/runs/OHE_lstm_full_river_100",
+#     PROJECT_ROOT / "output/08_baseline_results/runs/OHE_lstm_river_river_100",
+# ]
+
 OUTPUT_DIR = PROJECT_ROOT / "output/08_baseline_results/statistical_tests/full_full"
 SPLIT = "test"
 ALPHA = 0.05
+
+LABELS = {
+    "minimal_lstm": "LSTM",
+    "minimal_lstm_domain": "LSTM + Domain",
+    "ctrv_ekf": "EKF",
+    "chronos2_zero_shot": "Chronos2",
+    "constant_velocity": "CV",
+    "ctrv_arc": "CTRV (Arc)",
+    "ctrv": "CTRV",
+    "kalman": "KF",
+    "hybrid_cv_ctrv": "Hybrid",
+    "tirex_lstm": "TiREX",
+}
+
+MODEL_COLORS = {
+    "LSTM":          "#1f77b4",
+    "LSTM + Domain": "#299d82",
+    "EKF":           "#ff7f0e",
+    "Chronos2":      "#2ca02c",
+    "CV":            "#d62728",
+    "CTRV (Arc)":    "#9467bd",
+    "CTRV":          "#8c564b",
+    "KF":            "#e377c2",
+    "Hybrid":        "#7f7f7f",
+    "TiREX":         "#bcbd22",
+}
 
 if __name__ == "__main__":
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -55,7 +137,7 @@ if __name__ == "__main__":
     ranks_df = mean_ranks.reset_index()
     ranks_df.columns = ["model_key", "mean_rank"]
     ranks_df.to_csv(OUTPUT_DIR / "average_ranks.csv", index=False)
-    print("\n".join(f"  {r.mean_rank:.3f}  {r.model_key}" for _, r in ranks_df.iterrows()))
+    print("\n".join(f"  {r.mean_rank:.3f}  {LABELS.get(r.model_key, r.model_key)}" for _, r in ranks_df.iterrows()))
 
     # nemenyi post-hoc
     if significant:
@@ -64,9 +146,13 @@ if __name__ == "__main__":
         (nemenyi_p < ALPHA).astype(int).to_csv(OUTPUT_DIR / "nemenyi_significant.csv")
     # critical difference diagram
     if significant:
+        mean_ranks_labeled = mean_ranks.rename(index=LABELS)
+        nemenyi_p_labeled = nemenyi_p.rename(index=LABELS, columns=LABELS)
         fig, ax = plt.subplots(figsize=(8, 2 + 0.35 * len(mean_ranks)))
-        sp.critical_difference_diagram(mean_ranks, nemenyi_p, ax=ax, alpha=ALPHA)
-        ax.set_title(f"Critical Difference diagram  (Nemenyi, α={ALPHA},  n={len(matrix)} blocks)")
+        sp.critical_difference_diagram(mean_ranks_labeled, nemenyi_p_labeled, ax=ax, alpha=ALPHA,
+                                       color_palette=MODEL_COLORS)
+        ax.set_title(f"Critical Difference diagram  (Nemenyi, α={ALPHA})")
         fig.tight_layout()
         fig.savefig(OUTPUT_DIR / "cd_diagram.png", dpi=150)
         plt.close(fig)
+        print(f"Output saved to: {OUTPUT_DIR}")
