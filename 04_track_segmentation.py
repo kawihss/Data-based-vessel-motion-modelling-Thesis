@@ -197,7 +197,9 @@ if __name__ == '__main__':
             'context': lambda x: x.mode()[0] # use most frequent context
         }).reset_index()
 
-        # Convert context strings to numbers 
+        # Convert context strings to numbers for KMeans.
+        # Left this for reproducibility, but: context is nominal (unordered), so ordinal encoding introduces a false distance ordering
+        # One-hot encoding would be more appropriate for future versions
         vessel_profiles['context_idx'] = vessel_profiles['context'].map(CONTEXT_MAPPING)
 
         # Scale features: KMeans needs this so ROT (0-90) doesn't dominate SOG (0-15)

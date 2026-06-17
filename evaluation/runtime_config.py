@@ -11,6 +11,7 @@ def load_runtime_config(project_root):
 
 
 def resolve_run_paths(project_root, cfg, create=False):
+    
     project_root = Path(project_root)
     baseline_root_rel = cfg["paths"]["baseline_root"]
     baseline_root = project_root / baseline_root_rel

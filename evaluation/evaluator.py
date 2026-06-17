@@ -187,7 +187,10 @@ def export_predictions_for_file(model, file_path, output_dir, split='test', mode
             last_y = context_df['y'].iloc[-1]
 
             quantile_predictions = model.predict_quantiles(context_df, n_pred_steps) if hasattr(model, 'predict_quantiles') else None
-            displacements = model.predict(context_df, n_pred_steps)
+            try:
+                displacements = np.asarray(quantile_predictions[0.5], dtype=float)
+            except Exception:
+                displacements = model.predict(context_df, n_pred_steps)
             pred_positions = reconstruct_positions(last_x, last_y, displacements)
             lower_positions = reconstruct_positions(last_x, last_y, quantile_predictions[0.1]) if quantile_predictions is not None else None
             median_positions = pred_positions
@@ -344,98 +347,5 @@ def plot_horizon_error(metrics, label=None, ax=None, step_duration_s=30, save_pa
         save_path=save_path,
     )
 
-
-def run_evaluation(
-    model,
-    data_dir,
-    split='test',
-    context_filter=None,
-    export_predictions=False,
-    prediction_output_dir=None,
-    model_key=None,
-    model_label=None,
-):
-    files = _resolve_files(data_dir, split, context_filter)
-    print(f"Streaming {len(files)} file(s) for split '{split}'" +
-          (f", context(s) {context_filter}" if context_filter else ""))
-
-    prediction_exports = []
-    if export_predictions:
-        if prediction_output_dir is None:
-            prediction_output_dir = Path(data_dir).resolve().parent / '07_model_output'
-        prediction_output_dir = Path(prediction_output_dir)
-
-    per_file_rows = []
-    all_true = []
-    all_pred = []
-
-    for file_path in files:
-        df = _read_track_file(file_path)
-        file_metrics, file_true, file_pred = _evaluate_tracks(model, _iter_track_groups(df))
-        per_file_rows.append({
-            'file': Path(file_path).name,
-            'month': _extract_month_label(file_path),
-            'ADE': file_metrics['ADE'],
-            'FDE': file_metrics['FDE'],
-            'RMSE': file_metrics['RMSE'],
-            'n_tracks': file_metrics['n_tracks'],
-        })
-
-        if file_metrics['n_tracks'] > 0:
-            all_true.extend(file_true)
-            all_pred.extend(file_pred)
-
-        if export_predictions:
-            result = export_predictions_for_file(
-                model, file_path, prediction_output_dir,
-                split=split, model_key=model_key, model_label=model_label,
-            )
-            prediction_exports.append({
-                'file': Path(file_path).name,
-                'output_path': str(result['output_path']),
-                'rows': result['rows'],
-            })
-
-    if all_true:
-        metrics = evaluate_trajectory(np.array(all_true), np.array(all_pred))
-        metrics['n_tracks'] = len(all_true)
-    else:
-        metrics = {
-            'ADE': np.nan,
-            'FDE': np.nan,
-            'RMSE': np.nan,
-            'ADE_per_step': np.array([]),
-            'n_tracks': 0,
-        }
-
-    per_file_metrics = pd.DataFrame(per_file_rows)
-    if not per_file_metrics.empty:
-        per_file_metrics = per_file_metrics.sort_values(['RMSE', 'FDE', 'ADE'], ascending=False).reset_index(drop=True)
-
-    metrics['per_file_metrics'] = per_file_metrics
-
-    if not per_file_metrics.empty and per_file_metrics['month'].notna().any():
-        per_month_metrics = (
-            per_file_metrics
-            .groupby('month', as_index=False)
-            .agg(
-                ADE=('ADE', 'mean'),
-                FDE=('FDE', 'mean'),
-                RMSE=('RMSE', 'mean'),
-                n_tracks=('n_tracks', 'sum'),
-                n_files=('file', 'count'),
-            )
-            .sort_values('RMSE', ascending=False)
-            .reset_index(drop=True)
-        )
-    else:
-        per_month_metrics = pd.DataFrame(columns=['month', 'ADE', 'FDE', 'RMSE', 'n_tracks', 'n_files'])
-
-    metrics['per_month_metrics'] = per_month_metrics
-
-    if export_predictions:
-        metrics['prediction_exports'] = pd.DataFrame(prediction_exports)
-
-    return metrics
 
 

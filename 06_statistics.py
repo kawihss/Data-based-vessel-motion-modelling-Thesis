@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 import glob
 import os
 from collections import defaultdict
@@ -58,11 +59,10 @@ matplotlib.use('Agg') # prevents segfault on VERA
 # Create output folder if it doesn't exist
 os.makedirs("output/06_statistics", exist_ok=True)
 
-print("Counting raw AIS messages...")
-total_raw = sum(len(chunk) for file in glob.glob("output/01_raw/*.csv") 
-                for chunk in pd.read_csv(file, usecols=[0], chunksize=1000000))
-
-print(f"Total raw messages: {total_raw}")
+# total_raw = sum(len(chunk) for file in glob.glob("output/01_raw/*.csv") 
+#                 for chunk in pd.read_csv(file, usecols=[0], chunksize=1000000))
+total_raw = 153681423
+print(f"Total raw messages: {total_raw} (hardcoded)")
 
 # Process data
 print("Processing final trajectories...")
@@ -136,38 +136,70 @@ df_plot = pd.concat(plot_data, ignore_index=True)
 
 # Histograms
 stations = ['Kiel', 'Bremerhaven', 'Wedel']
-fig, axes = plt.subplots(nrows=4, ncols=len(stations), figsize=(18, 16))
 
-for i, station in enumerate(stations):
-    station_data = df_plot[df_plot['station'] == station]
-    
-    # sampled distributions for SOG, COG, ROT
-    axes[0, i].hist(station_data['sog'].dropna(), bins=40, color='blue', alpha=0.6, density=True)
-    axes[0, i].set_title(f"{station} - SOG (knots)")
-    
-    axes[1, i].hist(station_data['cog'].dropna(), bins=40, color='orange', alpha=0.6, density=True)
-    axes[1, i].set_title(f"{station} - COG (degrees)")
+# Violin plots for SOG and ROT per station + bar chart for trajectory counts
+df_station_violin = df_plot[['station', 'sog', 'rot']].copy()
 
-    axes[2, i].hist(station_data['rot'].dropna(), bins=40, color='green', alpha=0.6, density=True)
-    axes[2, i].set_title(f"{station} - ROT (deg/min)")
+fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(10, 8.8))
 
-    # distinct trajectory counts for context
-    counts_series = final_context_counts.get(station, pd.Series(dtype=int))
-    
-    if not counts_series.empty:
-        counts_sorted = counts_series.sort_values(ascending=False)
-        ax_bar = counts_sorted.plot(kind='bar', ax=axes[3, i], color='purple', alpha=0.6)
-        axes[3, i].set_title(f"{station} - Unique Trajectories per Context")
-        axes[3, i].set_xlabel("Distinct Trajectories (Unsampled)")
-        
-        for container in ax_bar.containers:
-            ax_bar.bar_label(container, fmt='%.0f')
+sns.violinplot(data=df_station_violin, x='station', y='sog', order=stations,
+               ax=axes[0], palette='Set2', inner='box')
+axes[0].set_title("SOG (knots) per Station")
+axes[0].set_xlabel("Station")
+axes[0].set_ylabel("SOG (knots)")
+
+sns.violinplot(data=df_station_violin, x='station', y='rot', order=stations,
+               ax=axes[1], palette='Set2', inner='box')
+axes[1].set_title("ROT (deg/min) per Station")
+axes[1].set_xlabel("Station")
+axes[1].set_ylabel("ROT (deg/min)")
+
+# distinct trajectory counts for all stations combined
+all_counts = pd.DataFrame([
+    {'station': station, 'context': ctx, 'count': len(tracks)}
+    for station, ctx_dict in true_contexts.items()
+    for ctx, tracks in ctx_dict.items()
+])
+if not all_counts.empty:
+    all_counts_pivot = all_counts.pivot(index='context', columns='station', values='count').fillna(0)
+    all_counts_pivot.plot(kind='bar', ax=axes[2], color=['#66c2a5', '#fc8d62', '#8da0cb'], alpha=0.8)
+    axes[2].set_title("Unique Trajectories per Context and Station")
+    axes[2].set_xlabel("Context")
+    axes[2].set_ylabel("Distinct Trajectories (Unsampled)")
+    axes[2].tick_params(axis='x', rotation=30)
+    for container in axes[2].containers:
+        axes[2].bar_label(container, fmt='%.0f', fontsize=7)
 
 plt.tight_layout()
 plt.savefig("output/06_statistics/simple_histograms.pdf")
-print("Saved histograms to output/06_statistics/simple_histograms.pdf", flush=True)
+print("Saved station violin plots to output/06_statistics/simple_histograms.pdf", flush=True)
 
-plt.close(fig) 
+plt.close(fig)
+
+
+# SOG and ROT per context — violin plots
+df_violin = df_plot[['context', 'sog', 'rot']].dropna(subset=['context'])
+context_order = sorted(df_violin['context'].unique())
+
+fig_ctx, (ax_sog, ax_rot) = plt.subplots(nrows=2, ncols=1, figsize=(12, 6.4))
+
+sns.violinplot(data=df_violin, x='context', y='sog', order=context_order,
+               ax=ax_sog, palette='Set2', inner='box')
+ax_sog.set_title("SOG (knots) per Context")
+ax_sog.set_xlabel("Context")
+ax_sog.set_ylabel("SOG (knots)")
+
+sns.violinplot(data=df_violin, x='context', y='rot', order=context_order,
+               ax=ax_rot, palette='Set2', inner='box')
+ax_rot.set_title("ROT (deg/min) per Context")
+ax_rot.set_xlabel("Context")
+ax_rot.set_ylabel("ROT (deg/min)")
+
+plt.tight_layout()
+plt.savefig("output/06_statistics/context_violin.pdf")
+print("Saved context violin plots to output/06_statistics/context_violin.pdf", flush=True)
+
+plt.close(fig_ctx)
 
 
 # COG Polar Projection Heatmap

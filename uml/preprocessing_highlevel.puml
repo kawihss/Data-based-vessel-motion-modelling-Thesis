@@ -1,0 +1,79 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam componentBackgroundColor #EAF3FF
+skinparam componentBorderColor #3F5B78
+skinparam packageBackgroundColor #F7FAFF
+skinparam packageBorderColor #6E8093
+skinparam nodesep 70
+skinparam ranksep 90
+
+title Preprocessing Pipeline
+
+package "Data Sources" {
+  [00_download.py\nGovData AIS XML] as download
+  [Raw data\nData/Kiel|Bremerhaven|Wedel] as raw_data
+}
+
+package "Preprocessing Scripts" {
+  [01_extract.py\nparse + filter AIS logs] as step01
+  [02_clean.py\ngeo filter + outlier removal\nOSM context assignment] as step02
+  [03_sample.py\nresample to 30s + ROT] as step03
+  [04_track_segmentation.py\ncontext/pred windows\ntrain/val/test split + augmentation] as step04
+  [05_normalize.py\nrelative features + z-score] as step05
+  [06_statistics.py\nanalysis + plots] as step06
+  [07_generate_parquet.py\nCSV -> Parquet] as step07
+}
+
+step01 -[hidden]-> step02
+step02 -[hidden]-> step03
+step03 -[hidden]-> step04
+step04 -[hidden]-> step05
+step05 -[hidden]-> step06
+step06 -[hidden]-> step07
+
+package "Outputs" {
+  [output/01_raw] as out01
+  [output/02_cleaned] as out02
+  [output/03_sampled] as out03
+  [output/04_trajectories] as out04
+  [output/05_normalized] as out05
+  [output/07_parquet] as out07
+}
+
+out01 -[hidden]-> out02
+out02 -[hidden]-> out03
+out03 -[hidden]-> out04
+out04 -[hidden]-> out05
+out05 -[hidden]-> out07
+
+[00_full_preprocessing_pipeline.py\norchestrator\nSTART_AT_STEP + cleanup] as orchestrator
+
+orchestrator --> download
+orchestrator --> step01
+orchestrator --> step02
+orchestrator --> step03
+orchestrator --> step04
+orchestrator --> step05
+orchestrator --> step07
+
+raw_data --> step01
+download --> raw_data
+
+step01 --> out01
+out01 --> step02
+step02 --> out02
+out02 --> step03
+step03 --> out03
+out03 --> step04
+step04 --> out04
+out04 --> step05
+step05 --> out05
+out05 --> step07
+step07 --> out07
+
+out05 --> step06
+
+@enduml

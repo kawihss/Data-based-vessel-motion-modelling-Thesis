@@ -12,6 +12,14 @@ from evaluation.evaluator import plot_horizon_error
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths
 
 
+#  loads evaluation/tuning CSV outputs from the selected run directory
+# and generates all publication-style plots for model comparison:
+# - Evaluation quality plots (horizon, monthly, context, uncertainty)
+# - Feature importance plots (channel and timestep)
+# - Tuning diagnostics (search-space and convergence).. (but you should use optuna plots when available, this was implemented before i knew about them)
+# - Pairwise RMSE distribution plots (violin)
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG = load_runtime_config(PROJECT_ROOT)
 
@@ -28,6 +36,8 @@ PLOT_KALMAN = bool(PLOT_FLAGS["kalman"])
 PLOT_CTRV_EKF = bool(PLOT_FLAGS["ctrv_ekf"])
 PLOT_TIREX_LSTM = bool(PLOT_FLAGS["tirex_lstm"])
 PLOT_CHRONOS2_ZERO_SHOT = bool(PLOT_FLAGS.get("chronos2_zero_shot", False))
+PLOT_MINIMAL_LSTM = bool(PLOT_FLAGS.get("minimal_lstm", False))
+PLOT_MINIMAL_LSTM_DOMAIN = bool(PLOT_FLAGS.get("minimal_lstm_domain", PLOT_FLAGS.get("embedded_lstm", False)))
 
 _ALL_MODEL_LABELS = {
     "constant_velocity": "Constant Velocity",
@@ -38,6 +48,8 @@ _ALL_MODEL_LABELS = {
     "ctrv_ekf": "CTRV EKF",
     "tirex_lstm": "TiRex LSTM",
     "chronos2_zero_shot": "Chronos-2 Zero-Shot",
+    "minimal_lstm": "Minimal LSTM",
+    "minimal_lstm_domain": "OHE LSTM",
 }
 _MODEL_FLAGS = {
     "constant_velocity": PLOT_CONSTANT_VELOCITY,
@@ -48,10 +60,12 @@ _MODEL_FLAGS = {
     "ctrv_ekf": PLOT_CTRV_EKF,
     "tirex_lstm": PLOT_TIREX_LSTM,
     "chronos2_zero_shot": PLOT_CHRONOS2_ZERO_SHOT,
+    "minimal_lstm": PLOT_MINIMAL_LSTM,
+    "minimal_lstm_domain": PLOT_MINIMAL_LSTM_DOMAIN,
 }
 ALL_MODEL_LABELS = {k: v for k, v in _ALL_MODEL_LABELS.items() if _MODEL_FLAGS[k]}
 
-METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]  # columns expected in per-month CSVs
+METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]  # expected columns in per-month CSVs
 CONTEXTS_TO_PLOT = ["harbour", "river", "channel", "lock"]
 CONTEXT_METRICS_TO_PLOT = ["ADE", "FDE", "RMSE"]
 UNCERTAINTY_METRICS_TO_PLOT = ["MIW", "Coverage", "Winkler80"]
@@ -70,8 +84,8 @@ tuning_diagnostics_dir = selected_run_dir / "tuning"
 plots_dir.mkdir(parents=True, exist_ok=True)
 
 
-# 1. ADE horizon plot
-# 
+# ---------- Evaluation plot group ----------
+# 1) ADE horizon plot
 def plot_ade_horizon():
     fig, ax = plt.subplots(figsize=(9, 5))
     any_plotted = False
@@ -102,7 +116,7 @@ def plot_ade_horizon():
 
 
 # 2. Monthly metrics plot
-def _parse_month(val):
+def _parse_month(val): # greyed out i vscode, but required
     # Parse strings like '2024-03' to a sortable (year, month) tuple.
     try:
         parts = str(val).split("-")
@@ -112,6 +126,7 @@ def _parse_month(val):
 
 
 def plot_monthly_metrics():
+    # Line plots for ADE/FDE/RMSE over months per enabled model
     for metric in METRICS_TO_PLOT:
         fig, ax = plt.subplots(figsize=(11, 5))
         any_plotted = False
@@ -119,11 +134,9 @@ def plot_monthly_metrics():
         for key, label in ALL_MODEL_LABELS.items():
             month_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_month_{key}.csv"
             if not month_path.exists():
-                #print(f"[monthly/{metric}] No per-month file for '{label}', skipping.")
                 continue
             df = pd.read_csv(month_path)
             if "month" not in df.columns or metric not in df.columns:
-                #print(f"[monthly/{metric}] '{label}' CSV missing 'month' or '{metric}' column, skipping.")
                 continue
 
             df = df.dropna(subset=["month", metric])
@@ -159,6 +172,7 @@ def plot_monthly_metrics():
 
 
 def _plot_context_metric_group(metrics, output_prefix):
+    # Shared grouped-bar plotting logic for context and uncertainty metrics
     for metric in metrics:
         fig, ax = plt.subplots(figsize=(11, 5))
         any_plotted = False
@@ -168,11 +182,9 @@ def _plot_context_metric_group(metrics, output_prefix):
         for idx, (key, label) in enumerate(ALL_MODEL_LABELS.items()):
             context_path = diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_context_{key}.csv"
             if not context_path.exists():
-                #print(f"[context/{metric}] No per-context file for '{label}', skipping.")
                 continue
             df = pd.read_csv(context_path)
             if "context" not in df.columns or metric not in df.columns:
-                ##print(f"[context/{metric}] '{label}' CSV missing 'context' or '{metric}' column, skipping.")
                 continue
 
             aligned = (
@@ -206,14 +218,17 @@ def _plot_context_metric_group(metrics, output_prefix):
 
 
 def plot_context_metrics():
+    # Context-wise ADE/FDE/RMSE.
     _plot_context_metric_group(CONTEXT_METRICS_TO_PLOT, output_prefix="context")
 
 
 def plot_uncertainty_metrics():
+    # Context-wise MIW/Coverage/Winkler80.
     _plot_context_metric_group(UNCERTAINTY_METRICS_TO_PLOT, output_prefix="uncertainty")
 
 
 def plot_channel_importance():
+    # normalized covariate importance per context, shown as 2x2 panels of bar charts per model
     for key, label in ALL_MODEL_LABELS.items():
         importance_path = diagnostics_dir / f"{EVAL_SPLIT}_channel_importance_{key}.csv"
         if not importance_path.exists():
@@ -254,6 +269,7 @@ def plot_channel_importance():
 
 
 def plot_timestep_importance():
+    # 2x2 context panels showing normalized context-timestep importance
     for key, label in ALL_MODEL_LABELS.items():
         importance_path = diagnostics_dir / f"{EVAL_SPLIT}_timestep_importance_{key}.csv"
         if not importance_path.exists():
@@ -297,7 +313,10 @@ def plot_timestep_importance():
 
 
 
+# ---------- Tuning diagnostics plot group ----------
+#prefer optuna plots for tuning diagnostics when available
 def plot_results(df, best_steps, best_rmse, model_label, output_path):
+    # Generic 1D velocity_steps tuning curve (RMSE vs steps)
     df_sorted = df.sort_values("params_velocity_steps")
 
     fig, ax = plt.subplots(figsize=(9, 5))
@@ -342,6 +361,7 @@ def plot_hybrid_results(
     model_label,
     output_path,
 ):
+    # Hybrid-specific diagnostics: pair heatmap + two sensitivity scatters. prefer optuna plots
     fig, (ax_left, ax_mid, ax_right) = plt.subplots(1, 3, figsize=(18, 5.5))
 
     # Panel 1: best RMSE observed for each (cv_steps, ctrv_steps) pair.
@@ -405,6 +425,7 @@ def plot_hybrid_results(
 
 
 def plot_kalman_results(df, best_params, best_rmse, model_label, output_path):
+    # Scatter diagnostics per Kalman parameter (log-scale x-axes).
     param_cols = {
         "params_q_pos": "q_pos (process noise, position)",
         "params_q_vel": "q_vel (process noise, velocity)",
@@ -438,6 +459,7 @@ def plot_kalman_results(df, best_params, best_rmse, model_label, output_path):
 
 
 def plot_ctrv_ekf_results(df, best_params, best_rmse, model_label, output_path):
+    # Scatter diagnostics per CTRV-EKF parameter (log-scale x-axes).
     param_cols = {
         "params_q_pos": "q_pos (process noise, position)",
         "params_q_vel": "q_vel (process noise, velocity)",
@@ -473,6 +495,7 @@ def plot_ctrv_ekf_results(df, best_params, best_rmse, model_label, output_path):
 
 
 def plot_convergence(df, model_label, output_path):
+    # Optuna convergence: trial values and cumulative best value.
     if "state" in df.columns:
         df = df[df["state"] == "COMPLETE"].copy()
     if "number" not in df.columns or "value" not in df.columns or df.empty:
@@ -505,13 +528,47 @@ def plot_convergence(df, model_label, output_path):
     plt.close(fig)
 
 
+def plot_minimal_lstm_results(df, best_params, best_rmse, model_label, output_path):
+    # Minimal-LSTM hyperparameter sensitivity scatter panels.
+    param_cols = {
+        "params_hidden_size": "hidden_size (units)",
+        "params_num_layers": "num_layers",
+        "params_dropout": "dropout",
+        "params_learning_rate": "learning_rate",
+        "params_batch_size": "batch_size",
+    }
+    available = {col: lbl for col, lbl in param_cols.items() if col in df.columns}
+    n = len(available)
+    fig, axes = plt.subplots(1, n, figsize=(4 * n, 5))
+    if n == 1:
+        axes = [axes]
+
+    for ax, (col, xlabel) in zip(axes, available.items()):
+        ax.scatter(df[col], df["value"], s=20, alpha=0.7, color="steelblue", label="All trials")
+        best_val = best_params.get(col.replace("params_", "best_"))
+        if best_val is not None:
+            ax.scatter([best_val], [best_rmse], color="crimson", marker="*", s=220, zorder=5,
+                       label=f"Best: {best_val}\nRMSE={best_rmse:.4f}")
+        ax.set_xlabel(xlabel, fontsize=9)
+        ax.set_ylabel("Validation Loss" if ax is axes[0] else "", fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8)
+
+    fig.suptitle(f"{model_label} - Hyperparameter Optimization", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    print(f"Plot saved to {output_path}")
+    plt.close(fig)
+
+
 def plot_tuning_results():
+    # Dispatch to model-specific tuning plot builders
     if not tuning_diagnostics_dir.exists():
         print("[tuning] No tuning diagnostics directory found, skipping.")
         return
 
     best_params_path = tuning_diagnostics_dir / "tuning_best_params_val.csv"
-    if not best_params_path.exists():
+    if not best_params_path.exists() or best_params_path.stat().st_size == 0:
         print("[tuning] No tuning_best_params_val.csv found, skipping.")
         return
 
@@ -596,6 +653,58 @@ def plot_tuning_results():
                 model_label=model_label,
                 output_path=plot_path,
             )
+        elif model_key == "minimal_lstm":
+            csv_path = tuning_diagnostics_dir / "tuning_minimal_lstm_val.csv"
+            if not csv_path.exists():
+                print(f"[tuning] {csv_path} not found, skipping Minimal LSTM.")
+                continue
+            df = pd.read_csv(csv_path)
+            plot_convergence(
+                df=df,
+                model_label=model_label,
+                output_path=plots_dir / "tuning_minimal_lstm_convergence.png",
+            )
+            plot_path = plots_dir / "tuning_minimal_lstm_val_plot.png"
+            best_params = {
+                "best_hidden_size": int(row["best_hidden_size"]),
+                "best_num_layers": int(row["best_num_layers"]),
+                "best_dropout": float(row["best_dropout"]),
+                "best_learning_rate": float(row["best_learning_rate"]),
+                "best_batch_size": int(row["best_batch_size"]),
+            }
+            plot_minimal_lstm_results(
+                df=df,
+                best_params=best_params,
+                best_rmse=float(row["best_val_loss"]),
+                model_label=model_label,
+                output_path=plot_path,
+            )
+        elif model_key == "minimal_lstm_domain":
+            csv_path = tuning_diagnostics_dir / "tuning_minimal_lstm_domain_val.csv"
+            if not csv_path.exists():
+                print(f"[tuning] {csv_path} not found, skipping Minimal LSTM Domain.")
+                continue
+            df = pd.read_csv(csv_path)
+            plot_convergence(
+                df=df,
+                model_label=model_label,
+                output_path=plots_dir / "tuning_minimal_lstm_domain_convergence.png",
+            )
+            plot_path = plots_dir / "tuning_minimal_lstm_domain_val_plot.png"
+            best_params = {
+                "best_hidden_size": int(row["best_hidden_size"]),
+                "best_num_layers": int(row["best_num_layers"]),
+                "best_dropout": float(row["best_dropout"]),
+                "best_learning_rate": float(row["best_learning_rate"]),
+                "best_batch_size": int(row["best_batch_size"]),
+            }
+            plot_minimal_lstm_results(
+                df=df,
+                best_params=best_params,
+                best_rmse=float(row["best_val_loss"]),
+                model_label=model_label,
+                output_path=plot_path,
+            )
         else:
             csv_path = tuning_diagnostics_dir / f"tuning_{model_key}_val.csv"
             if not csv_path.exists():
@@ -608,6 +717,9 @@ def plot_tuning_results():
                 output_path=plots_dir / f"tuning_{model_key}_convergence.png",
             )
             plot_path = plots_dir / f"tuning_{model_key}_val_plot.png"
+            if "best_velocity_steps" not in row.index:
+                print(f"[tuning] best_velocity_steps missing for {model_label} ({model_key}), skipping generic tuning plot.")
+                continue
             plot_results(
                 df=df,
                 best_steps=int(row["best_velocity_steps"]),
@@ -618,6 +730,7 @@ def plot_tuning_results():
 
 
 
+# ---------- Pairwise RMSE distribution (violin) plot group ----------
 def _load_per_file_rmse(model_keys_labels):
     all_data = []
     for key, label in model_keys_labels:
@@ -697,6 +810,8 @@ def plot_violin_ctrv_vs_ekf():
 
 
 def plot_violin_chronos_vs_tirex():
+    if not (PLOT_CHRONOS2_ZERO_SHOT and PLOT_TIREX_LSTM):
+        return
     pairs = [("chronos2_zero_shot", "Chronos-2 Zero-Shot"), ("tirex_lstm", "TiRex LSTM")]
     plot_df = _load_per_file_rmse(pairs)
     if plot_df is None:
@@ -720,6 +835,244 @@ def plot_violin_chronos_vs_tirex():
         )
 
 
+def plot_violin_lstm_vs_lstm_domain():
+    runs_base = PROJECT_ROOT / "output" / "08_baseline_results" / "runs"
+    sources = [
+        (runs_base / "lstm_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_minimal_lstm.csv", "LSTM"),
+        (runs_base / "OHE_lstm_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_minimal_lstm_domain.csv", "LSTM (Domain)"),
+    ]
+
+    all_data = []
+    for path, label in sources:
+        if not path.exists():
+            print(f"[violin lstm vs domain] File not found: {path}, skipping.")
+            continue
+        df = pd.read_csv(path)
+        if "month" not in df.columns or "RMSE" not in df.columns:
+            print(f"[violin lstm vs domain] '{label}' CSV missing 'month' or 'RMSE' column, skipping.")
+            continue
+        df = df.dropna(subset=["month", "RMSE"])[["month", "RMSE"]].copy()
+        df["year"] = df["month"].apply(lambda x: str(x).split("-")[0])
+        df["model"] = label
+        all_data.append(df)
+
+    if not all_data:
+        print("[violin lstm vs domain] No data found, skipping.")
+        return
+
+    plot_df = pd.concat(all_data, ignore_index=True)
+    out_dir = PROJECT_ROOT / "output" / "08_baseline_results" / "plots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Year", 0, "per_year"),
+        ("month", "Month", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            split=True, inner="quartile", cut=0, scale="width", ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: LSTM vs LSTM (Domain) ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            out_dir / f"{EVAL_SPLIT}_violin_lstm_vs_lstm_domain_{suffix}.png",
+            xrot=xrot,
+        )
+
+
+def plot_violin_lstm_vs_nohpo_lstm_domain():
+    runs_base = PROJECT_ROOT / "output" / "08_baseline_results" / "runs"
+    sources = [
+        (runs_base / "lstm_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_minimal_lstm.csv", "LSTM"),
+        (runs_base / "noHPO_OHE_lstm_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_minimal_lstm_domain.csv", "LSTM + Domain *"),
+    ]
+
+    all_data = []
+    for path, label in sources:
+        if not path.exists():
+            print(f"[violin lstm vs domain] File not found: {path}, skipping.")
+            continue
+        df = pd.read_csv(path)
+        if "month" not in df.columns or "RMSE" not in df.columns:
+            print(f"[violin lstm vs domain] '{label}' CSV missing 'month' or 'RMSE' column, skipping.")
+            continue
+        df = df.dropna(subset=["month", "RMSE"])[["month", "RMSE"]].copy()
+        df["year"] = df["month"].apply(lambda x: str(x).split("-")[0])
+        df["model"] = label
+        all_data.append(df)
+
+    if not all_data:
+        print("[violin lstm vs domain] No data found, skipping.")
+        return
+
+    plot_df = pd.concat(all_data, ignore_index=True)
+    out_dir = PROJECT_ROOT / "output" / "08_baseline_results" / "plots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Year", 0, "per_year"),
+        ("month", "Month", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            split=True, inner="quartile", cut=0, scale="width", ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: LSTM vs LSTM + Domain * ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            out_dir / f"{EVAL_SPLIT}_violin_lstm_vs_nohpo_lstm_domain_{suffix}.png",
+            xrot=xrot,
+        )
+
+
+def plot_violin_cv_ekf_chronos_lstm():
+    # Violin plot comparing CV, EKF, Chronos and LSTM across all models
+    runs_base = PROJECT_ROOT / "output" / "08_baseline_results" / "runs"
+    sources = [
+        (runs_base / "baseline_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_constant_velocity.csv", "CV"),
+        (runs_base / "baseline_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_ctrv_ekf.csv", "EKF"),
+        (runs_base / "foundation_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_chronos2_zero_shot.csv", "Chronos"),
+        (runs_base / "lstm_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_minimal_lstm.csv", "LSTM"),
+    ]
+
+    all_data = []
+    for path, label in sources:
+        if not path.exists():
+            print(f"[violin 4-models] File not found: {path}, skipping.")
+            continue
+        df = pd.read_csv(path)
+        if "month" not in df.columns or "RMSE" not in df.columns:
+            print(f"[violin 4-models] '{label}' CSV missing 'month' or 'RMSE' column, skipping.")
+            continue
+        df = df.dropna(subset=["month", "RMSE"])[["month", "RMSE"]].copy()
+        df["year"] = df["month"].apply(lambda x: str(x).split("-")[0])
+        df["model"] = label
+        all_data.append(df)
+
+    if not all_data:
+        print("[violin 4-models] No data found, skipping.")
+        return
+
+    plot_df = pd.concat(all_data, ignore_index=True)
+    out_dir = PROJECT_ROOT / "output" / "08_baseline_results" / "plots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Year", 0, "per_year"),
+        ("month", "Month", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            inner="quartile", cut=0, ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: CV vs EKF vs Chronos vs LSTM ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            out_dir / f"{EVAL_SPLIT}_violin_cv_ekf_chronos_lstm_{suffix}.png",
+            xrot=xrot,
+        )
+
+
+def plot_violin_cv_ekf_tirex_lstm():
+    # Violin plot comparing CV, EKF, TiRex and LSTM across all models
+    runs_base = PROJECT_ROOT / "output" / "08_baseline_results" / "runs"
+    sources = [
+        (runs_base / "baseline_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_constant_velocity.csv", "CV"),
+        (runs_base / "baseline_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_ctrv_ekf.csv", "EKF"),
+        (runs_base / "foundation_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_tirex_lstm.csv", "TiRex"),
+        (runs_base / "lstm_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_minimal_lstm.csv", "LSTM"),
+    ]
+
+    all_data = []
+    for path, label in sources:
+        if not path.exists():
+            print(f"[violin 4-models tirex] File not found: {path}, skipping.")
+            continue
+        df = pd.read_csv(path)
+        if "month" not in df.columns or "RMSE" not in df.columns:
+            print(f"[violin 4-models tirex] '{label}' CSV missing 'month' or 'RMSE' column, skipping.")
+            continue
+        df = df.dropna(subset=["month", "RMSE"])[["month", "RMSE"]].copy()
+        df["year"] = df["month"].apply(lambda x: str(x).split("-")[0])
+        df["model"] = label
+        all_data.append(df)
+
+    if not all_data:
+        print("[violin 4-models tirex] No data found, skipping.")
+        return
+
+    plot_df = pd.concat(all_data, ignore_index=True)
+    out_dir = PROJECT_ROOT / "output" / "08_baseline_results" / "plots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Year", 0, "per_year"),
+        ("month", "Month", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            inner="quartile", cut=0, ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: CV vs EKF vs TiRex vs LSTM ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            out_dir / f"{EVAL_SPLIT}_violin_cv_ekf_tirex_lstm_{suffix}.png",
+            xrot=xrot,
+        )
+
+    all_data = []
+    for path, label in sources:
+        if not path.exists():
+            print(f"[violin 4-models] File not found: {path}, skipping.")
+            continue
+        df = pd.read_csv(path)
+        if "month" not in df.columns or "RMSE" not in df.columns:
+            print(f"[violin 4-models] '{label}' CSV missing 'month' or 'RMSE' column, skipping.")
+            continue
+        df = df.dropna(subset=["month", "RMSE"])[["month", "RMSE"]].copy()
+        df["year"] = df["month"].apply(lambda x: str(x).split("-")[0])
+        df["model"] = label
+        all_data.append(df)
+
+    if not all_data:
+        print("[violin 4-models] No data found, skipping.")
+        return
+
+    plot_df = pd.concat(all_data, ignore_index=True)
+    out_dir = PROJECT_ROOT / "output" / "08_baseline_results" / "plots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Year", 0, "per_year"),
+        ("month", "Month", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            inner="quartile", cut=0, ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: CV vs EKF vs Chronos vs LSTM ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            out_dir / f"{EVAL_SPLIT}_violin_cv_ekf_chronos_lstm_{suffix}.png",
+            xrot=xrot,
+        )
+
+
 if __name__ == "__main__":
     print(f"Using configured run directory: {selected_run_dir}")
     print(f"Reading diagnostics from: {diagnostics_dir}")
@@ -735,5 +1088,9 @@ if __name__ == "__main__":
     plot_violin_cv_vs_kalman()
     plot_violin_ctrv_vs_ekf()
     plot_violin_chronos_vs_tirex()
+    plot_violin_lstm_vs_lstm_domain()
+    plot_violin_lstm_vs_nohpo_lstm_domain()
+    plot_violin_cv_ekf_chronos_lstm()
+    plot_violin_cv_ekf_tirex_lstm()
 
     print("\nDone.")

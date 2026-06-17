@@ -1,0 +1,39 @@
+@startuml classes_VesselTrajectoryAll
+set namespaceSeparator none
+class "BaselineModel" as models.base_model.BaselineModel {
+}
+class "CTRVExtendedKalmanFilter" as models.filters.CTRVExtendedKalmanFilter {
+}
+class "Chronos2ZeroShotModel" as models.sequence.chronos2_zero_shot.Chronos2ZeroShotModel {
+}
+class "ConstantTurnRateVelocityArcModel" as models.kinematic.ConstantTurnRateVelocityArcModel {
+}
+class "ConstantTurnRateVelocityModel" as models.kinematic.ConstantTurnRateVelocityModel {
+}
+class "ConstantVelocityModel" as models.kinematic.ConstantVelocityModel {
+}
+class "HybridCVCTRVModel" as models.kinematic.HybridCVCTRVModel {
+}
+class "KalmanFilter" as models.filters.KalmanFilter {
+}
+class "MinimalLSTMModel" as models.sequence.minimal_lstm.MinimalLSTMModel {
+}
+class "MinimalLSTMNet" as models.sequence.minimal_lstm.MinimalLSTMNet {
+}
+class "RMSEEarlyStoppingCallback" as evaluation.tune_hyperparams.RMSEEarlyStoppingCallback {
+}
+class "TirexLSTMModel" as models.sequence.tirex_lstm.TirexLSTMModel {
+}
+class "TrialProgressCallback" as evaluation.tune_hyperparams.TrialProgressCallback {
+}
+models.filters.CTRVExtendedKalmanFilter --|> models.base_model.BaselineModel
+models.filters.KalmanFilter --|> models.base_model.BaselineModel
+models.kinematic.ConstantTurnRateVelocityArcModel --|> models.base_model.BaselineModel
+models.kinematic.ConstantTurnRateVelocityModel --|> models.base_model.BaselineModel
+models.kinematic.ConstantVelocityModel --|> models.base_model.BaselineModel
+models.kinematic.HybridCVCTRVModel --|> models.base_model.BaselineModel
+models.sequence.chronos2_zero_shot.Chronos2ZeroShotModel --|> models.base_model.BaselineModel
+models.sequence.minimal_lstm.MinimalLSTMModel --|> models.base_model.BaselineModel
+models.sequence.tirex_lstm.TirexLSTMModel --|> models.base_model.BaselineModel
+models.sequence.minimal_lstm.MinimalLSTMNet --* models.sequence.minimal_lstm.MinimalLSTMModel : model
+@enduml

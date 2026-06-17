@@ -10,7 +10,6 @@ from models.base_model import BaselineModel
 
 _CONTEXT_LENGTH = 10
 _PREDICTION_LENGTH = 10
-_REQUIRED_QUANTILES = (0.1, 0.25, 0.5, 0.75, 0.9)
 _COVARIATE_COLUMNS = ("dx_norm", "dy_norm", "sog_norm", "cog_sin_norm", "cog_cos_norm", "dt_norm", "rot_norm")
 
 
@@ -49,6 +48,7 @@ class Chronos2ZeroShotModel(BaselineModel):
         )
 
     def _get_pipeline(self):
+        #makes sure we only load the model once per unique configuration of (model_name, device_map, torch_dtype)
         cache_key = (self.model_name, self.device_map, self.torch_dtype)
         if cache_key not in self._PIPELINE_CACHE:
             self._PIPELINE_CACHE[cache_key] = Chronos2Pipeline.from_pretrained(
@@ -60,7 +60,7 @@ class Chronos2ZeroShotModel(BaselineModel):
         return self._PIPELINE_CACHE[cache_key]
 
     def _build_input(self, context_df):
-        ctx = context_df.sort_values("t_utc").tail(_CONTEXT_LENGTH)
+        ctx = context_df.sort_values("t_utc").tail(_CONTEXT_LENGTH) # take the most recent CONTEXT_LENGTH rows after sorting by time
         target = np.vstack([
             ctx["dx_norm"].to_numpy(dtype=np.float32, copy=True),
             ctx["dy_norm"].to_numpy(dtype=np.float32, copy=True),
@@ -70,7 +70,7 @@ class Chronos2ZeroShotModel(BaselineModel):
 
     def predict_quantiles(self, context_df, n_pred_steps):
         pipeline = self._get_pipeline()
-        quantile_levels = tuple(round(float(q), 2) for q in pipeline.model.quantiles.detach().cpu().tolist())
+        quantile_levels = tuple(round(float(q), 2) for q in pipeline.model.quantiles.detach().cpu().tolist()) # load quantile levels 
         forecast = pipeline.predict(
             inputs=[self._build_input(context_df)],
             prediction_length=_PREDICTION_LENGTH,
