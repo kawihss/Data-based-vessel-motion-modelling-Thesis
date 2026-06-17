@@ -33,7 +33,7 @@ Current runtime data paths:
 
 ### `models/kinematic.py`
 
-Current baseline models:
+Baseline models:
 
 - `ConstantVelocityModel` (CV)
 - `ConstantTurnRateVelocityModel` (CTRV)
@@ -54,7 +54,7 @@ The Kalman model uses a linear constant-velocity state transition and is evaluat
 
 Kalman tuning parameters are `q_pos`, `q_vel`, `r_pos`, `p0_pos`, `p0_vel`, and `init_velocity_steps`.
 
-**Note on Hybrid model behavior:** In practice, the Hybrid model almost always selects the CV branch, even after tuning. The rotation threshold ends up rarely triggered on this dataset, so Hybrid predictions differ from pure CV only in marginal cases. Whether to include the Hybrid model in the final thesis evaluation is still open; it adds complexity for negligible empirical gain.
+
 
 ## Evaluation Layer
 
@@ -68,7 +68,7 @@ Provides trajectory quality metrics:
 - ADE per prediction step
 - MIW from the `[q=0.1, q=0.9]` interval on predicted `dx`/`dy` displacements
 - Coverage of the `[q=0.1, q=0.9]` interval on predicted `dx`/`dy` displacements
-- Additional quantile-derived metrics for Chronos-2: pinball loss, CRPS approximation, Winkler interval score
+- Additional quantile-derived metrics 
 
 ### `evaluation/evaluator.py`
 
@@ -81,7 +81,7 @@ Core responsibilities:
 - aggregate metrics,
 - return diagnostic tables.
 
-Two execution modes are currently available:
+Two execution modes are available:
 
 1. streaming mode (file-by-file),
 2. cached numpy mode for fast repeated evaluation during tuning.
@@ -96,11 +96,11 @@ Purpose:
 
 - tune hyperparameters on the **validation split** for all enabled models.
 
-**1D models — full grid search (exhaustive):**
+**1D models: full grid search (exhaustive):**
 
 CV, CTRV, CTRV Arc, and TiRex LSTM each have one tuned parameter (`velocity_steps`). The tuner iterates over every integer from 1 to `max_velocity_steps` (derived from the longest validation context window) and picks the step count with the lowest RMSE. Each model runs in a separate process.
 
-**Multi-parameter models — Optuna TPE:**
+**Multi-parameter models: Optuna TPE:**
 
 - Hybrid CV/CTRV: 4 parameters (`cv_velocity_steps`, `ctrv_velocity_steps`, `rot_steps`, `rot_threshold`), seeded with the grid-search results for CV and CTRV.
 - Kalman: 5 parameters (`q_pos`, `q_vel`, `r_pos`, `p0_pos`, `p0_vel`).
@@ -154,7 +154,7 @@ Chronos-2 differs from the tuned baseline models in one important way:
 2. it does not read hyperparameters from `tuning_best_params_val.csv`,
 3. it uses `q=0.5` as the point forecast,
 4. it writes per-context diagnostics for `harbour`, `river`, `channel`, and `lock`,
-5. it exports quantile-aware diagnostics and channel-importance tables when enabled.
+5. it exports quantile-aware diagnostics when enabled.
 
 On Linux, set `HF_HUB_DISABLE_XET=1` in the shell before running Chronos-2, for example with `export HF_HUB_DISABLE_XET=1`.
 
@@ -271,6 +271,6 @@ nohup python -u evaluation/run_evaluation.py > tune_log.txt 2>&1 &
 read `tune_log.txt` for output and errors. Use `tail -f tune_log.txt` to monitor live.
 
 
-to remove before handin: prototype folder, covariate importance calcualtion for "chrons and tire" and all related code, selfmade convergence plots, replaced by optuna plots
-
 need to add ALl results are in baseline results, misleading directory name
+
+Update the readme so all models are covered (eg add learned models to tuning). double check everything. change the phrasing like this is the final version. ask me when in doubt. no need to give precise details. i am on a bachelor level, no senior level documentation

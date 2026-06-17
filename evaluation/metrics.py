@@ -62,45 +62,6 @@ def evaluate_quantile_forecast(y_true, y_quantiles):
         "Winkler80": calculate_winkler_score(y_true, y_quantiles, lower_q=0.1, upper_q=0.9),
     }
 
-
-def calculate_channel_importance(covariate_values, motion_magnitude):
-    target = np.concatenate([np.asarray(values, dtype=float).reshape(-1) for values in motion_magnitude])
-    raw_importance = {}
-    for covariate, values in covariate_values.items():
-        series = np.concatenate([np.asarray(item, dtype=float).reshape(-1) for item in values])
-        corr = np.corrcoef(series, target)[0, 1]
-        if not np.isfinite(corr):
-            raise ValueError(f"Pearson correlation for covariate '{covariate}' is not finite.")
-        raw_importance[covariate] = abs(float(corr))
-
-    total = float(sum(raw_importance.values()))
-    if total <= 0.0:
-        raise ValueError("Channel importance cannot be normalized because the total absolute correlation is zero.")
-
-    return {covariate: value / total for covariate, value in raw_importance.items()}
-
-
-def calculate_timestep_importance(context_motion_magnitude, future_motion_score):
-    context_matrix = np.asarray(context_motion_magnitude, dtype=float)
-    target = np.asarray(future_motion_score, dtype=float).reshape(-1)
-
-    if context_matrix.ndim != 2:
-        raise ValueError("context_motion_magnitude must be 2D with shape (n_tracks, n_context_steps).")
-    if target.ndim != 1 or target.size != context_matrix.shape[0]:
-        raise ValueError("future_motion_score must be 1D with one value per track.")
-
-    n_steps = context_matrix.shape[1]
-    raw_importance = np.zeros(n_steps, dtype=float)
-    for step in range(n_steps):
-        corr = np.corrcoef(context_matrix[:, step], target)[0, 1]
-        raw_importance[step] = abs(float(corr)) if np.isfinite(corr) else 0.0
-
-    total = float(raw_importance.sum())
-    if total <= 0.0:
-        return {step + 1: 1.0 / n_steps for step in range(n_steps)}
-
-    return {step + 1: float(raw_importance[step] / total) for step in range(n_steps)}
-
 def plot_ade_over_horizon(ade_per_step, step_duration_s=30, label=None, ax=None, save_path=None):
     # Plots ADE(t), error development over the prediction horizon
     # step_duration_s, seconds between prediction steps (default 30s from preprocessing)

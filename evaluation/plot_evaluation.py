@@ -15,7 +15,6 @@ from evaluation.runtime_config import load_runtime_config, resolve_run_paths
 #  loads evaluation/tuning CSV outputs from the selected run directory
 # and generates all plots for model comparison:
 # - Evaluation quality plots (horizon, monthly, context, uncertainty)
-# - Feature importance plots (channel and timestep)
 # - Pairwise RMSE distribution plots (violin)
 
 
@@ -224,90 +223,6 @@ def plot_uncertainty_metrics():
     # Context-wise MIW/Coverage/Winkler80.
     _plot_context_metric_group(UNCERTAINTY_METRICS_TO_PLOT, output_prefix="uncertainty")
 
-
-def plot_channel_importance():
-    # normalized covariate importance per context, shown as 2x2 panels of bar charts per model
-    for key, label in ALL_MODEL_LABELS.items():
-        importance_path = diagnostics_dir / f"{EVAL_SPLIT}_channel_importance_{key}.csv"
-        if not importance_path.exists():
-            continue
-
-        df = pd.read_csv(importance_path)
-        if df.empty:
-            continue
-
-        fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharey=True)
-        axes = axes.flatten()
-        any_plotted = False
-
-        for axis, context_label in zip(axes, CONTEXTS_TO_PLOT):
-            ctx_df = df[df["context"] == context_label].copy()
-            if ctx_df.empty:
-                axis.set_visible(False)
-                continue
-
-            ctx_df = ctx_df.sort_values("importance", ascending=False)
-            axis.bar(ctx_df["covariate"], ctx_df["importance"], color="steelblue")
-            axis.set_title(context_label)
-            axis.set_ylim(0.0, 1.0)
-            axis.grid(True, alpha=0.3)
-            axis.tick_params(axis="x", rotation=45)
-            any_plotted = True
-
-        if not any_plotted:
-            plt.close(fig)
-            continue
-
-        fig.suptitle(f"Channel Importance by Context ({label})", fontsize=13)
-        fig.tight_layout()
-        out = plots_dir / f"{EVAL_SPLIT}_channel_importance_{key}.png"
-        fig.savefig(out, dpi=150)
-        print(f"[channel-importance] Saved to {out}")
-        plt.close(fig)
-
-
-def plot_timestep_importance():
-    # 2x2 context panels showing normalized context-timestep importance
-    for key, label in ALL_MODEL_LABELS.items():
-        importance_path = diagnostics_dir / f"{EVAL_SPLIT}_timestep_importance_{key}.csv"
-        if not importance_path.exists():
-            continue
-
-        df = pd.read_csv(importance_path)
-        if df.empty:
-            continue
-
-        fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharey=True)
-        axes = axes.flatten()
-        any_plotted = False
-
-        for axis, context_label in zip(axes, CONTEXTS_TO_PLOT):
-            ctx_df = df[df["context"] == context_label].copy()
-            if ctx_df.empty:
-                axis.set_visible(False)
-                continue
-
-            ctx_df = ctx_df.sort_values("timestep")
-            ctx_df = ctx_df[ctx_df["timestep"] > 1]
-            axis.plot(ctx_df["timestep"], ctx_df["importance"], marker="o", color="darkorange")
-            axis.set_title(context_label)
-            axis.set_ylim(0.0, 1.0)
-            axis.set_xlabel("Context Timestep")
-            axis.grid(True, alpha=0.3)
-            any_plotted = True
-
-        if not any_plotted:
-            plt.close(fig)
-            continue
-
-        axes[0].set_ylabel("Normalized Importance")
-        axes[2].set_ylabel("Normalized Importance")
-        fig.suptitle(f"Timestep Importance by Context ({label})", fontsize=13)
-        fig.tight_layout()
-        out = plots_dir / f"{EVAL_SPLIT}_timestep_importance_{key}.png"
-        fig.savefig(out, dpi=150)
-        print(f"[timestep-importance] Saved to {out}")
-        plt.close(fig)
 
 # ---------- Pairwise RMSE distribution (violin) plot group ----------
 def _load_per_file_rmse(model_keys_labels):
@@ -661,8 +576,6 @@ if __name__ == "__main__":
     plot_monthly_metrics()
     plot_context_metrics()
     plot_uncertainty_metrics()
-    plot_channel_importance()
-    plot_timestep_importance()
     plot_violin_cv_vs_kalman()
     plot_violin_ctrv_vs_ekf()
     plot_violin_chronos_vs_tirex()
