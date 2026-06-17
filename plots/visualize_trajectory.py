@@ -4,15 +4,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, CheckButtons
 from pathlib import Path
-import sys
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from evaluation.runtime_config import load_runtime_config, resolve_run_paths
 
 #this script can be used to manually inspect individual tracks
-#created with help of Claude Sonnet for interactive plotting
-#plots not availably on VERA via ssh, run locally
+#plots not availably on VERA via ssh, run locally or modify to generate pngs
 
 # Globals also togglable in the GUI
 SHOW_CV = True
@@ -24,52 +18,6 @@ SHOW_CTRV_EKF = True
 SHOW_CHRONOS2 = True
 SHOW_TIREX = True
 SHOW_MINIMAL_LSTM = True
-
-
-def _has_prediction_files_for_stem(model_output_dir, source_stem):
-    model_output_dir = Path(model_output_dir)
-    return any(model_output_dir.glob(f"{source_stem}__*.csv"))
-
-
-def _first_predicted_parquet(project_root, config, model_output_dir):
-    parquet_dir = project_root / str(config["data"]["parquet_dir"])
-    for pred_path in sorted(Path(model_output_dir).glob("*__*.csv")):
-        source_stem = pred_path.name.split("__", 1)[0]
-        candidate = parquet_dir / f"{source_stem}.parquet"
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def _select_source_file(project_root, config, model_output_dir, preferred_source_file):
-    preferred_source_file = Path(preferred_source_file)
-    if preferred_source_file.exists() and _has_prediction_files_for_stem(model_output_dir, preferred_source_file.stem):
-        return preferred_source_file
-
-    if preferred_source_file.exists():
-        print(
-            f"[visualizer] Preferred source file exists but has no predictions in run output: {preferred_source_file}"
-        )
-
-    parquet_dir = project_root / str(config["data"]["parquet_dir"])
-
-    # Prefer a parquet file that has prediction CSVs in the current run output.
-    for pred_path in sorted(Path(model_output_dir).glob("*__*.csv")):
-        source_stem = pred_path.name.split("__", 1)[0]
-        candidate = parquet_dir / f"{source_stem}.parquet"
-        if candidate.exists():
-            print(f"[visualizer] Preferred source file not found, fallback to predicted file: {candidate}")
-            return candidate
-
-    # Final fallback: first parquet file in configured parquet directory.
-    parquet_files = sorted(parquet_dir.glob("*.parquet"))
-    if parquet_files:
-        print(f"[visualizer] Preferred source file not found, fallback to first parquet: {parquet_files[0]}")
-        return parquet_files[0]
-
-    raise FileNotFoundError(
-        f"No parquet files found in {parquet_dir} and no matching predictions in {model_output_dir}."
-    )
 
 def load_data(source):
     if isinstance(source, pd.DataFrame):
@@ -283,32 +231,11 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
 
 if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
-    config = load_runtime_config(project_root)
-    run_paths = resolve_run_paths(project_root, config, create=False)
-    model_output_dir = run_paths['model_output_dir']
-
-    # Point to a parquet file in output/07_parquet/ (stem must match the prediction output filenames)
-    source_file = project_root / 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-01_01.parquet'
-    #source_file = project_root / 'output/07_parquet/test_harbour_processed_kiel_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Kiel-2025-07_01.parquet'
+    model_output_dir = project_root / 'output/08_baseline_results/runs/current/model_output'
     source_file = project_root / 'output/07_parquet/test_river_processed_bremerhaven_AIS-data-for-ship-emission-measurement-on-the-mesurementsite-Bremerhaven-2025-02_16.parquet'
-
-    source_file = _select_source_file(
-        project_root=project_root,
-        config=config,
-        model_output_dir=model_output_dir,
-        preferred_source_file=source_file,
-    )
 
     df = load_data(source_file)
     model_predictions, model_specs = load_model_predictions(source_file, model_output_dir=model_output_dir)
-
-    if not model_predictions:
-        fallback_source = _first_predicted_parquet(project_root, config, model_output_dir)
-        if fallback_source is not None and fallback_source != source_file:
-            print(f"[visualizer] No predictions found for selected source; retrying with: {fallback_source}")
-            source_file = fallback_source
-            df = load_data(source_file)
-            model_predictions, model_specs = load_model_predictions(source_file, model_output_dir=model_output_dir)
 
     print(f"[visualizer] Source file: {source_file}")
     print(f"[visualizer] Loaded prediction models: {sorted(model_predictions.keys())}")

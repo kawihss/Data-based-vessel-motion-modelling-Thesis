@@ -61,8 +61,5 @@ if __name__ == "__main__":
     cleaned_dir = Path("output/02_cleaned")
     files = list(cleaned_dir.glob("*.csv"))
     
-    if not files:
-        print(f"No cleaned CSV files found in {cleaned_dir}")
-    else:
-        for csv_file in files:
-            plot_context_assignments(csv_file)
+    for csv_file in files:
+        plot_context_assignments(csv_file)

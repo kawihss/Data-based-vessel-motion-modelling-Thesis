@@ -272,3 +272,5 @@ read `tune_log.txt` for output and errors. Use `tail -f tune_log.txt` to monitor
 
 
 to remove before handin: prototype folder, covariate importance calcualtion for "chrons and tire" and all related code, selfmade convergence plots, replaced by optuna plots
+
+need to add ALl results are in baseline results, misleading directory name
