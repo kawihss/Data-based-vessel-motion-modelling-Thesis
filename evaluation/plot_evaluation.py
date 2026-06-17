@@ -931,6 +931,148 @@ def plot_violin_lstm_vs_nohpo_lstm_domain():
         )
 
 
+def plot_violin_cv_ekf_chronos_lstm():
+    # Violin plot comparing CV, EKF, Chronos and LSTM across all models
+    runs_base = PROJECT_ROOT / "output" / "08_baseline_results" / "runs"
+    sources = [
+        (runs_base / "baseline_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_constant_velocity.csv", "CV"),
+        (runs_base / "baseline_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_ctrv_ekf.csv", "EKF"),
+        (runs_base / "foundation_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_chronos2_zero_shot.csv", "Chronos"),
+        (runs_base / "lstm_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_minimal_lstm.csv", "LSTM"),
+    ]
+
+    all_data = []
+    for path, label in sources:
+        if not path.exists():
+            print(f"[violin 4-models] File not found: {path}, skipping.")
+            continue
+        df = pd.read_csv(path)
+        if "month" not in df.columns or "RMSE" not in df.columns:
+            print(f"[violin 4-models] '{label}' CSV missing 'month' or 'RMSE' column, skipping.")
+            continue
+        df = df.dropna(subset=["month", "RMSE"])[["month", "RMSE"]].copy()
+        df["year"] = df["month"].apply(lambda x: str(x).split("-")[0])
+        df["model"] = label
+        all_data.append(df)
+
+    if not all_data:
+        print("[violin 4-models] No data found, skipping.")
+        return
+
+    plot_df = pd.concat(all_data, ignore_index=True)
+    out_dir = PROJECT_ROOT / "output" / "08_baseline_results" / "plots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Year", 0, "per_year"),
+        ("month", "Month", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            inner="quartile", cut=0, ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: CV vs EKF vs Chronos vs LSTM ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            out_dir / f"{EVAL_SPLIT}_violin_cv_ekf_chronos_lstm_{suffix}.png",
+            xrot=xrot,
+        )
+
+
+def plot_violin_cv_ekf_tirex_lstm():
+    # Violin plot comparing CV, EKF, TiRex and LSTM across all models
+    runs_base = PROJECT_ROOT / "output" / "08_baseline_results" / "runs"
+    sources = [
+        (runs_base / "baseline_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_constant_velocity.csv", "CV"),
+        (runs_base / "baseline_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_ctrv_ekf.csv", "EKF"),
+        (runs_base / "foundation_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_tirex_lstm.csv", "TiRex"),
+        (runs_base / "lstm_full_full_100" / "diagnostics" / f"{EVAL_SPLIT}_metrics_per_file_minimal_lstm.csv", "LSTM"),
+    ]
+
+    all_data = []
+    for path, label in sources:
+        if not path.exists():
+            print(f"[violin 4-models tirex] File not found: {path}, skipping.")
+            continue
+        df = pd.read_csv(path)
+        if "month" not in df.columns or "RMSE" not in df.columns:
+            print(f"[violin 4-models tirex] '{label}' CSV missing 'month' or 'RMSE' column, skipping.")
+            continue
+        df = df.dropna(subset=["month", "RMSE"])[["month", "RMSE"]].copy()
+        df["year"] = df["month"].apply(lambda x: str(x).split("-")[0])
+        df["model"] = label
+        all_data.append(df)
+
+    if not all_data:
+        print("[violin 4-models tirex] No data found, skipping.")
+        return
+
+    plot_df = pd.concat(all_data, ignore_index=True)
+    out_dir = PROJECT_ROOT / "output" / "08_baseline_results" / "plots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Year", 0, "per_year"),
+        ("month", "Month", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            inner="quartile", cut=0, ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: CV vs EKF vs TiRex vs LSTM ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            out_dir / f"{EVAL_SPLIT}_violin_cv_ekf_tirex_lstm_{suffix}.png",
+            xrot=xrot,
+        )
+
+    all_data = []
+    for path, label in sources:
+        if not path.exists():
+            print(f"[violin 4-models] File not found: {path}, skipping.")
+            continue
+        df = pd.read_csv(path)
+        if "month" not in df.columns or "RMSE" not in df.columns:
+            print(f"[violin 4-models] '{label}' CSV missing 'month' or 'RMSE' column, skipping.")
+            continue
+        df = df.dropna(subset=["month", "RMSE"])[["month", "RMSE"]].copy()
+        df["year"] = df["month"].apply(lambda x: str(x).split("-")[0])
+        df["model"] = label
+        all_data.append(df)
+
+    if not all_data:
+        print("[violin 4-models] No data found, skipping.")
+        return
+
+    plot_df = pd.concat(all_data, ignore_index=True)
+    out_dir = PROJECT_ROOT / "output" / "08_baseline_results" / "plots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for x_col, xlabel, xrot, suffix in [
+        ("year", "Year", 0, "per_year"),
+        ("month", "Month", 45, "per_month"),
+    ]:
+        plot_df_sorted = plot_df.sort_values(x_col)
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.violinplot(
+            data=plot_df_sorted, x=x_col, y="RMSE", hue="model",
+            inner="quartile", cut=0, ax=ax, alpha=0.7,
+        )
+        _save_violin(
+            fig, ax,
+            f"RMSE: CV vs EKF vs Chronos vs LSTM ({EVAL_SPLIT} split)",
+            xlabel, "RMSE [m]",
+            out_dir / f"{EVAL_SPLIT}_violin_cv_ekf_chronos_lstm_{suffix}.png",
+            xrot=xrot,
+        )
+
+
 if __name__ == "__main__":
     print(f"Using configured run directory: {selected_run_dir}")
     print(f"Reading diagnostics from: {diagnostics_dir}")
@@ -948,5 +1090,7 @@ if __name__ == "__main__":
     plot_violin_chronos_vs_tirex()
     plot_violin_lstm_vs_lstm_domain()
     plot_violin_lstm_vs_nohpo_lstm_domain()
+    plot_violin_cv_ekf_chronos_lstm()
+    plot_violin_cv_ekf_tirex_lstm()
 
     print("\nDone.")
