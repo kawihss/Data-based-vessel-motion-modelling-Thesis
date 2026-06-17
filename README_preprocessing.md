@@ -10,7 +10,7 @@ The pipeline transforms raw AIS (Automatic Identification System) logs from Germ
 
 A major component of this pipeline is the automated assignment of geographic context (harbour, river, channel, lock) using OpenStreetMap data, allowing for context-aware model training and targeted data augmentation.
 
-## Quick Start for Graders
+## Quick Start
 
 The pipeline is compatible with both Windows and Linux-based operating systems. To verify the code functionality without processing the full year of 2025 data, you can run a limited execution:
 
