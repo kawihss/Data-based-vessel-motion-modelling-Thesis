@@ -74,7 +74,6 @@ def create_interactive_plot(df, model_predictions=None, model_specs=None):
     context_style = {'label': 'Context',      'color': '#1f77b4', 'marker': 'o'}
     control_style = {'label': 'Ground Truth', 'color': '#2ca02c', 'marker': '*'}
 
-    # visibility state, keyed by model_key, initialised from global switches
     visibility = {
         'constant_velocity':  SHOW_CV,
         'ctrv':               SHOW_CTRV,
