@@ -269,6 +269,3 @@ nohup python -u evaluation/run_evaluation.py > tune_log.txt 2>&1 &
 
 
 read `tune_log.txt` for output and errors. Use `tail -f tune_log.txt` to monitor live.
-
-
-to remove before handin: prototype folder, covariate importance calcualtion for "chrons and tire" and all related code, selfmade convergence plots, replaced by optuna plots
