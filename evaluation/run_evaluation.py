@@ -9,7 +9,7 @@ from models.kinematic import ConstantVelocityModel, ConstantTurnRateVelocityMode
 from models.filters import KalmanFilter, CTRVExtendedKalmanFilter
 from models.sequence import TirexLSTMModel, Chronos2ZeroShotModel, MinimalLSTMModel, MinimalLSTMDomainModel
 from evaluation.evaluator import export_predictions_for_file, _resolve_files, _read_track_file, _iter_track_groups, reconstruct_positions, _extract_month_label
-from evaluation.metrics import evaluate_trajectory, evaluate_quantile_forecast, calculate_channel_importance, calculate_timestep_importance
+from evaluation.metrics import evaluate_trajectory, evaluate_quantile_forecast
 from evaluation.runtime_config import load_runtime_config, resolve_run_paths, update_latest_run_pointer, write_run_metadata, get_sampling_value, subsample_items
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -61,15 +61,6 @@ EVALUATION_PCT = int(get_sampling_value(CONFIG, "evaluation_pct"))
 
 np.random.seed(SEED)
 
-CHRONOS_COVARIATE_COLUMNS = (
-    "dx_norm",
-    "dy_norm",
-    "sog_norm",
-    "cog_sin_norm",
-    "cog_cos_norm",
-    "dt_norm",
-    "rot_norm",
-)
 REPORT_CONTEXTS = ("harbour", "river", "channel", "lock")
 
 _DXDY_SCALER_PARAMS_CACHE = {}
@@ -150,9 +141,6 @@ def _make_context_bucket():
         'pred_pos': [],
         'true_disp': [],
         'quantiles': {},
-        'covariates': {column: [] for column in CHRONOS_COVARIATE_COLUMNS},
-        'motion_magnitude': [],
-        'future_motion_score': [],
     }
 
 if __name__ == "__main__":
@@ -392,7 +380,6 @@ if __name__ == "__main__":
                         pred_df['dx_norm'].values, pred_df['dy_norm'].values, _active_scaler_path
                     )
                 context_label = str(context_df['context'].iloc[-1])
-                ctx_sorted = context_df.sort_values('t_utc')
 
                 if len(true_positions) != n_pred_steps:
                     continue
@@ -413,17 +400,6 @@ if __name__ == "__main__":
                         bucket['true_disp'].append(true_displacements)
                         for quantile, prediction in quantile_predictions.items():
                             bucket['quantiles'].setdefault(float(quantile), []).append(np.asarray(prediction, dtype=float))
-                        for covariate in CHRONOS_COVARIATE_COLUMNS:
-                            bucket['covariates'][covariate].append(ctx_sorted[covariate].to_numpy(dtype=float, copy=True))
-                        #quantify motion magnitude as sum of absolute dx and dy, averaged over the track, 
-                        # future_motion_score as average euclidean norm of true displacements, 
-                        # used for importance analysis
-                        bucket['motion_magnitude'].append(
-                            np.abs(ctx_sorted['dx_norm'].to_numpy(dtype=float, copy=True)) + np.abs(ctx_sorted['dy_norm'].to_numpy(dtype=float, copy=True))
-                        )
-                        bucket['future_motion_score'].append(
-                            float(np.sqrt((true_displacements ** 2).sum(axis=1)).mean())
-                        )
 
             #call the evaluator twice, once for per file metrics, once for overall metrics. 
             #room for improvement but i already started evaluation like this
@@ -518,8 +494,6 @@ if __name__ == "__main__":
                 per_month_metrics.to_csv(per_month_path, index=False)
 
         per_context_rows = []
-        channel_importance_rows = []
-        timestep_importance_rows = []
         for context_label, bucket in per_context_data.items():
             if not bucket['true_pos']:
                 continue
@@ -543,36 +517,11 @@ if __name__ == "__main__":
                         _stack_quantile_lists(bucket['quantiles']),
                     )
                 )
-                importance = calculate_channel_importance(bucket['covariates'], bucket['motion_magnitude'])
-                for covariate, value in importance.items():
-                    channel_importance_rows.append({
-                        'context': context_label,
-                        'covariate': covariate,
-                        'importance': value,
-                        'sample_pct': EVALUATION_PCT,
-                    })
-                timestep_importance = calculate_timestep_importance(
-                    bucket['motion_magnitude'],
-                    bucket['future_motion_score'],
-                )
-                for timestep, value in timestep_importance.items():
-                    timestep_importance_rows.append({
-                        'context': context_label,
-                        'timestep': int(timestep),
-                        'importance': value,
-                        'sample_pct': EVALUATION_PCT,
-                    })
             per_context_rows.append(context_row)
 
         if per_context_rows:
             per_context_path = test_diagnostics_dir / f"{EVAL_SPLIT}_metrics_per_context_{model_key}.csv"
             pd.DataFrame(per_context_rows).to_csv(per_context_path, index=False)
-        if channel_importance_rows:
-            importance_path = test_diagnostics_dir / f"{EVAL_SPLIT}_channel_importance_{model_key}.csv"
-            pd.DataFrame(channel_importance_rows).to_csv(importance_path, index=False)
-        if timestep_importance_rows:
-            timestep_path = test_diagnostics_dir / f"{EVAL_SPLIT}_timestep_importance_{model_key}.csv"
-            pd.DataFrame(timestep_importance_rows).to_csv(timestep_path, index=False)
 
         ade_per_step = metrics.get('ADE_per_step')
         if ade_per_step is not None and len(ade_per_step) > 0:

@@ -29,7 +29,7 @@ def save_study_plots(study, out_dir, model_key):
         try:
             fig = make_fig()
             if fig is None:
-                print(f"Skipped {name} for {model_key}: not enough informative data")
+                print(f"Skipped {name} for {model_key}")
                 continue
             path = out_dir / f"{model_key}_{name}.html"
             fig.write_html(str(path))

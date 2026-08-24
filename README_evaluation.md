@@ -1,6 +1,6 @@
-# Evaluation Framework and Current Workflow
+# Evaluation Framework
 
-This document describes the current evaluation and hyperparameter tuning state for the baseline motion models.
+This document describes the evaluation and hyperparameter tuning setup for all motion models.
 
 ## Position in the Pipeline
 
@@ -10,51 +10,53 @@ After preprocessing, evaluation consumes windowed trajectory data and produces:
 2. per-file and per-month diagnostics,
 3. optional prediction exports for visual inspection.
 
-Current runtime data paths:
+Data paths:
 
-- tuning input: `output/07_parquet/`
-- final baseline evaluation input: `output/07_parquet/`
-- baseline outputs: `output/08_baseline_results/`
+- input: `output/07_parquet/`
+- outputs: `output/08_baseline_results/`
 
-## System requirements
+## System Requirements
 
 - Python dependencies: see `requirements.txt`
-- NVIDIA CUDA 8.0 or later for the tirex library
-- RAM: 32+ GB recommended (tested on 48GB+ machines) for caching track data during tuning and evaluation
-- Chronos-2 on Linux currently requires `export HF_HUB_DISABLE_XET=1` before running evaluation or tuning so model downloads work reliably
-- **TiRex CUDA backend:** `xlstm` calls `torch.utils.cpp_extension.include_paths(cuda=True)` which was removed in PyTorch 2.11+. Patch cuda_init.py` replace `include_paths(cuda=True)` with `include_paths()` and hardcode `CUDA_LIB` to your CUDA lib path (e.g. `/usr/local/cuda-12.6/targets/x86_64-linux/lib`). This patch must be reapplied after `pip install --upgrade xlstm`. As a fallback if CUDA kernel compilation fails, set `backend: torch` in `configs/evaluation.yaml` under `models.tirex` to uses PyTorch ops on GPU without custom kernels (3-4 times slower).
-
+- NVIDIA CUDA 8.0 or later for TiRex and the LSTM models
+- 32+ GB RAM recommended (tested on 48 GB) for caching track data during tuning and evaluation
+- Chronos-2 on Linux requires `export HF_HUB_DISABLE_XET=1` before running so model downloads work reliably
+- **TiRex CUDA backend:** `xlstm` calls `torch.utils.cpp_extension.include_paths(cuda=True)` which was removed in PyTorch 2.11+. Patch `cuda_init.py`: replace `include_paths(cuda=True)` with `include_paths()` and hardcode `CUDA_LIB` to your CUDA lib path (e.g. `/usr/local/cuda-12.6/targets/x86_64-linux/lib`). This patch must be reapplied after `pip install --upgrade xlstm`. As a fallback if CUDA kernel compilation fails, set `backend: torch` in `configs/evaluation.yaml` under `models.tirex` to use PyTorch ops on GPU without custom kernels (3-4x slower).
 
 ## Model Layer
 
 ### `models/base_model.py`
 
-`BaselineModel` is the common interface. Evaluator logic is model-agnostic and only depends on `predict(context_df, n_pred_steps)`. Sequence models are
+`BaselineModel` is the shared interface for all models. The evaluator is model-agnostic and only depends on `predict(context_df, n_pred_steps)`.
 
-### `models/kinematic.py`
+### Kinematic models: `models/kinematic.py`
 
-Current baseline models:
+- `ConstantVelocityModel` (CV): averages recent velocity over a tuned context window.
+- `ConstantTurnRateVelocityModel` (CTRV): same averaging, but also propagates heading and turn rate.
+- `ConstantTurnRateVelocityArcModel` (CTRV Arc): CTRV variant that reconstructs position along an arc instead of straight steps.
+- `HybridCVCTRVModel` (Hybrid): selects CV or CTRV per track based on a rotation-rate threshold.
 
-- `ConstantVelocityModel` (CV)
-- `ConstantTurnRateVelocityModel` (CTRV)
-- `HybridCVCTRVModel` (Hybrid)
-- `KalmanFilter` (Kalman with CV state model)
-- `Chronos2ZeroShotModel` (Chronos-2 base, zero-shot, fixed 10-step context and 10-step prediction horizon, no tuning)
+CV, CTRV, and CTRV Arc share one tuning parameter: `velocity_steps` (how many recent context steps to average). The Hybrid model has four: `cv_velocity_steps`, `ctrv_velocity_steps`, `rot_steps`, and `rot_threshold`.
 
-CV and CTRV use one parameterization:
+### Filter models: `models/filters.py`
 
-- `velocity_steps`: number of recent context steps to average.
+- `KalmanFilter` (Kalman): linear constant-velocity Kalman filter. Runs a predict-correct cycle over the context window, then rolls out without further corrections.
+- `CTRVExtendedKalmanFilter` (CTRV EKF): extended Kalman filter using the CTRV motion model. Also runs a predict-correct cycle, then rolls out.
 
-The Hybrid model selects between CV and CTRV per track based on a rotation-rate threshold. It has additional parameters `cv_velocity_steps`, `ctrv_velocity_steps`, `rot_steps`, and `rot_threshold`.
+Kalman tuning parameters: `q_pos`, `q_vel`, `r_pos`, `p0_pos`, `p0_vel`.
+CTRV EKF tuning parameters: `q_pos`, `q_vel`, `q_rot`, `r_pos`, `p0_pos`, `p0_vel`, `p0_rot`, `init_velocity_steps`.
 
-The Kalman model uses a linear constant-velocity state transition and is evaluated in two phases:
+### Foundation models: `models/sequence/`
 
-- context phase: regular Kalman prediction-correction cycle with measurements,
-- prediction phase: pure model rollout without further measurement correction.
+- `TirexLSTMModel` (TiRex): pre-trained xLSTM-based foundation model (NX-AI/TiRex). Loaded from HuggingFace, no training required. One tuning parameter: `velocity_steps` (size of the context window fed to the model).
+- `Chronos2ZeroShotModel` (Chronos-2): pre-trained probabilistic transformer (Amazon Chronos-2). Fully zero-shot, no tuning of any kind. Uses the median quantile (`q=0.5`) as the point forecast and also outputs prediction intervals.
 
-Kalman tuning parameters are `q_pos`, `q_vel`, `r_pos`, `p0_pos`, `p0_vel`, and `init_velocity_steps`.
+### Trained LSTM models: `models/sequence/minimal_lstm.py`
 
-**Note on Hybrid model behavior:** In practice, the Hybrid model almost always selects the CV branch, even after tuning. The rotation threshold ends up rarely triggered on this dataset, so Hybrid predictions differ from pure CV only in marginal cases. Whether to include the Hybrid model in the final thesis evaluation is still open; it adds complexity for negligible empirical gain.
+- `MinimalLSTMModel` (Minimal LSTM): LSTM trained from scratch on the training split. Encodes a fixed-length context window, then predicts the full horizon in one shot via a linear head (no autoregressive decoding).
+- `MinimalLSTMDomainModel` (OHE LSTM): same architecture, but the waterway domain (river, harbour, channel, lock) is injected as a one-hot vector into the initial LSTM hidden state.
+
+Both models use normalized displacement (`dx_norm`, `dy_norm`) as input and target.
 
 ## Evaluation Layer
 
@@ -62,180 +64,152 @@ Kalman tuning parameters are `q_pos`, `q_vel`, `r_pos`, `p0_pos`, `p0_vel`, and 
 
 Provides trajectory quality metrics:
 
-- ADE
-- FDE
+- ADE (Average Displacement Error)
+- FDE (Final Displacement Error)
 - RMSE
 - ADE per prediction step
-- MIW from the `[q=0.1, q=0.9]` interval on predicted `dx`/`dy` displacements
-- Coverage of the `[q=0.1, q=0.9]` interval on predicted `dx`/`dy` displacements
-- Additional quantile-derived metrics for Chronos-2: pinball loss, CRPS approximation, Winkler interval score
+- MIW (Mean Interval Width) from the `[q=0.1, q=0.9]` prediction interval
+- Coverage of the `[q=0.1, q=0.9]` interval
+- Winkler interval score
+
+MIW, Coverage, and Winkler score apply only to models that output quantile predictions (TiRex, Chronos-2).
 
 ### `evaluation/evaluator.py`
 
 Core responsibilities:
 
-- resolve files by split/context,
+- resolve files by split and context,
 - load and group tracks,
 - call model prediction,
-- reconstruct positions,
-- aggregate metrics,
-- return diagnostic tables.
+- reconstruct positions from predicted displacements,
+- aggregate metrics.
 
-Two execution modes are currently available:
+Two execution modes are available:
 
 1. streaming mode (file-by-file),
 2. cached numpy mode for fast repeated evaluation during tuning.
 
-Cached mode is used by Optuna tuning to avoid repeated disk I/O per trial.
+Cached mode is used by Optuna to avoid repeated disk I/O per trial.
 
 ## Hyperparameter Tuning
 
 ### `evaluation/tune_hyperparams.py`
 
-Purpose:
+Tunes or trains all models on the **validation split**.
 
-- tune hyperparameters on the **validation split** for all enabled models.
+**Grid search (1D models):**
 
-**1D models — full grid search (exhaustive):**
+CV, CTRV, CTRV Arc, and TiRex LSTM each have one tuning parameter (`velocity_steps`). The tuner tests every integer from 1 to `max_velocity_steps` and picks the value with the lowest validation RMSE. Each model runs in a separate process.
 
-CV, CTRV, CTRV Arc, and TiRex LSTM each have one tuned parameter (`velocity_steps`). The tuner iterates over every integer from 1 to `max_velocity_steps` (derived from the longest validation context window) and picks the step count with the lowest RMSE. Each model runs in a separate process.
+**Optuna TPE (multi-parameter kinematic models):**
 
-**Multi-parameter models — Optuna TPE:**
+- Hybrid: 4 parameters, seeded with the grid-search results for CV and CTRV.
+- Kalman: 5 parameters.
+- CTRV EKF: 8 parameters, with early stopping.
 
-- Hybrid CV/CTRV: 4 parameters (`cv_velocity_steps`, `ctrv_velocity_steps`, `rot_steps`, `rot_threshold`), seeded with the grid-search results for CV and CTRV.
-- Kalman: 5 parameters (`q_pos`, `q_vel`, `r_pos`, `p0_pos`, `p0_vel`).
-- CTRV EKF: 8 parameters (noise/covariance values + `init_velocity_steps`), with early stopping.
+**Neural training (LSTM models):**
 
-Current behavior:
+Minimal LSTM and OHE LSTM are trained from scratch inside the tuning script. Optuna searches over hyperparameter configurations (hidden size, dropout, learning rate, batch size); each trial trains a model from scratch on the training split and evaluates it on the validation split. The best checkpoint is saved to the path configured in `evaluation.yaml`. These models do not read from `tuning_best_params_val.csv`.
 
-1. starts 1D model grid-search jobs in parallel processes,
-2. caches validation tracks in RAM inside each worker process,
-3. collects results and writes intermediate `tuning_best_params_val.csv`,
-4. runs Hybrid, Kalman, and CTRV EKF tuning sequentially (Hybrid seeds from CV/CTRV grid results),
-5. writes final combined best-params and all-trials CSVs.
+**Chronos-2:**
 
-Outputs:
+No tuning: fully zero-shot.
 
-- `tuning_cv_val.csv`, `tuning_ctrv_val.csv`, `tuning_ctrv_arc_val.csv`, `tuning_tirex_lstm_val.csv`
-- `tuning_hybrid_cv_ctrv_val.csv`, `tuning_kalman_val.csv`, `tuning_ctrv_ekf_val.csv`
-- `tuning_best_params_val.csv`
-- `tuning_all_trials_val.csv`
+**Tuning procedure:**
 
-All outputs are written under the run folder: `output/08_baseline_results/runs/{run.name}/tuning/`.
+1. 1D grid-search jobs run in parallel,
+2. validation tracks are cached in RAM per worker process,
+3. results are collected and an intermediate `tuning_best_params_val.csv` is written,
+4. Hybrid, Kalman, and CTRV EKF Optuna studies run sequentially,
+5. LSTM models train sequentially after the kinematic tuning,
+6. final best-params and all-trials CSVs are written.
 
-Tuning plots are generated by `evaluation/plot_evaluation.py` from the saved CSV files.
+Outputs (written to `output/08_baseline_results/runs/{run.name}/tuning/`).
 
-Important split policy:
 
-- validation is for parameter selection,
-- test is only for final reporting.
+Splits:
 
-## Final Baseline Evaluation (Test)
+- validation is used for parameter selection and LSTM training,
+- test is used only for final reporting.
+
+## Final Evaluation
 
 ### `evaluation/run_evaluation.py`
 
-Purpose:
+Runs final metrics on the configured split (default: `test`) for all enabled models.
 
-- run final metrics on test split for selected models,
-- export diagnostics and optional prediction trajectories.
+Behavior:
 
-Current behavior:
+1. loads tuned parameters from `tuning_best_params_val.csv` (required for kinematic and TiRex models; crashes if missing: run tuning first),
+2. loads all parquet files into memory once and reuses them across all models,
+3. evaluates on the configured split,
+4. computes per-file, per-month, and per-context (harbour/river/channel/lock) metrics,
+5. optionally exports per-model prediction CSVs.
 
-1. loads tuned parameters from `tuning_best_params_val.csv` (crashes if missing; run tuning first),
-2. loads all selected parquet files into memory once and reuses them across all enabled models,
-3. evaluates on configured split (default: `test`),
-4. computes and writes per-file and per-month metrics,
-5. optionally exports per-model prediction CSVs,
-6. writes outputs under `output/08_baseline_results/`.
+Chronos-2 does not read from `tuning_best_params_val.csv`. It runs zero-shot and outputs quantile-aware diagnostics in addition to the standard metrics.
 
-Chronos-2 differs from the tuned baseline models in one important way:
+The LSTM models load their checkpoint from the path configured in `evaluation.yaml` and also do not use `tuning_best_params_val.csv`.
 
-1. it runs strictly zero-shot,
-2. it does not read hyperparameters from `tuning_best_params_val.csv`,
-3. it uses `q=0.5` as the point forecast,
-4. it writes per-context diagnostics for `harbour`, `river`, `channel`, and `lock`,
-5. it exports quantile-aware diagnostics and channel-importance tables when enabled.
-
-On Linux, set `HF_HUB_DISABLE_XET=1` in the shell before running Chronos-2, for example with `export HF_HUB_DISABLE_XET=1`.
-
-Current baseline output structure:
-
-- diagnostics: `output/08_baseline_results/diagnostics/`
-- prediction exports: `output/08_baseline_results/model_output/`
+On Linux, set `HF_HUB_DISABLE_XET=1` before running Chronos-2 (`export HF_HUB_DISABLE_XET=1`).
 
 ## Plotting and Reporting
 
 ### `evaluation/plot_evaluation.py`
 
-Purpose:
+Generates all plots from existing CSV outputs without re-running model inference.
 
-- generate publication/reporting plots from existing CSV diagnostics,
-- avoid rerunning model inference just to regenerate figures.
+Behavior:
 
-Current behavior:
+1. reads diagnostics from the configured run folder,
+2. generates ADE-over-horizon plots per model,
+3. generates monthly ADE/FDE/RMSE plots per model,
+4. generates context-wise metric and uncertainty interval plots,
+5. generates pairwise RMSE violin plots for selected model pairs,
+6. writes all images to the run's `plots/` folder.
 
-1. reads test diagnostics from `output/08_baseline_results/diagnostics/`,
-2. creates ADE-over-horizon plot per enabled model,
-3. creates monthly ADE/FDE/RMSE plots per enabled model,
-4. reads tuning summaries from `evaluation/diagnostics/` and regenerates CV/CTRV/Hybrid tuning plots,
-5. writes all plot images to `output/08_baseline_results/plots/`.
+Model visibility is controlled by the `plotting.models` flags in `configs/evaluation.yaml`.
 
-Model visibility for plots is controlled by the top-level flags in the script (`PLOT_CONSTANT_VELOCITY`, `PLOT_CTRV`, `PLOT_HYBRID`).
+## Usage Sequence
 
-## Recommended Usage Sequence
-
-1. run `evaluation/tune_hyperparams.py` on validation,
+1. run `evaluation/tune_hyperparams.py` (trains LSTM models and tunes all other models on validation),
 2. verify `tuning_best_params_val.csv`,
 3. run `evaluation/run_evaluation.py` on test,
-4. run `evaluation/plot_evaluation.py` to generate evaluation and tuning plots,
-5. compare final model metrics and generated figures.
+4. run `evaluation/plot_evaluation.py` to generate plots,
+5. compare final metrics and figures.
 
-## Central Config (YAML)
+## Central Config
 
-Runtime settings are configured in `configs/evaluation.yaml`.
+All runtime settings are in `configs/evaluation.yaml`:
 
-This single file controls:
-
-- run metadata (`run.name`, `run.description`, `run.seed`, `run.sample_pct`),
-- sampling (`sampling.tuning_validation_pct`, `sampling.evaluation_pct`),
-- data settings (`data.parquet_dir`, `data.split`, `data.context_filter`),
+- run metadata (`run.name`, `run.seed`, `run.sample_pct`),
+- sampling fractions for tuning and evaluation (`sampling.*`),
+- data paths and split (`data.*`),
 - model enable switches (`models.*`),
-- tuning hyperparameters (`tuning.*`),
-- plotting model visibility and step duration (`plotting.*`).
+- per-model configuration (device, checkpoint paths, batch sizes),
+- tuning parameters (`tuning.*`),
+- plot visibility and step duration (`plotting.*`).
 
-`sampling.tuning_validation_pct` controls file-level subsampling of the validation split during hyperparameter optimization.
+`sampling.tuning_validation_pct` subsamples the validation split during tuning.
+`sampling.evaluation_pct` subsamples the evaluation split (useful for quick test runs).
+All sampling is deterministic via `run.seed`.
 
-`sampling.evaluation_pct` controls file-level subsampling of the configured evaluation split (usually test), useful for faster debug/test evaluation runs.
+## Output Layout
 
-All sampling is deterministic and reproducible via `run.seed`.
-
-## Non-overwriting Output Layout
-
-Outputs are now versioned per run name to avoid data loss:
+All outputs are versioned under the run name to avoid overwriting earlier results:
 
 - base: `output/08_baseline_results/runs/{run.name}/`
-- tuning CSVs: `.../tuning/`
+- tuning outputs: `.../tuning/`
 - evaluation diagnostics: `.../diagnostics/`
 - prediction exports: `.../model_output/`
 - plots: `.../plots/`
 
-If you reuse the same `run.name`, tuning and evaluation overwrite files in that run folder.
-Use a new `run.name` when you want to preserve earlier results.
+Reusing the same `run.name` overwrites that run's files. Use a new name to preserve earlier results.
 
-## Plotting Source
+`evaluation/plot_evaluation.py` reads from the run folder matching `run.name` in the config and writes plots back to that run's `plots/` folder.
 
-`evaluation/plot_evaluation.py` now reads from the newest run folder under `output/08_baseline_results/runs/` by modification time and writes plots back to that run's `plots/` folder.
+## Reproducibility
 
-## Reproducibility Metadata
-
-Each run writes:
-
-- `run_metadata.yaml` in the run root (contains run name, seed, sample percentage, split/context),
-- `output/08_baseline_results/latest_run.txt` updated to the current run name.
-
-Evaluation CSVs also carry `sample_pct` so future subsampling runs can be compared without changing schema.
-
-
+Each run writes a `run_metadata.yaml` in the run root and updates `output/08_baseline_results/latest_run.txt`. Evaluation CSVs carry a `sample_pct` column so subsampled runs remain comparable.
 
 ## Notes
 
@@ -244,21 +218,18 @@ Evaluation CSVs also carry `sample_pct` so future subsampling runs can be compar
 nvidia-smi -L
 watch -n 1 nvidia-smi
 ```
-or 
-```bash 
+or
+```bash
 nvitop
 ```
-after installing with `pip install nvitop`
+after installing with `pip install nvitop`.
 
 **CPU usage monitoring (Python processes):**
 ```bash
 htop -p $(pgrep -d',' -f python)
 ```
 
-
-**Run without crash on logout:**
-
-add tag -u for unbuffered stoudt if you want to see live output in the log file:
+**Run without crash on logout** (add `-u` for unbuffered stdout so output appears in the log file):
 ```bash
 nohup python -u evaluation/tune_hyperparams.py > tune_log.txt 2>&1 &
 ```
@@ -269,3 +240,4 @@ nohup python -u evaluation/run_evaluation.py > tune_log.txt 2>&1 &
 
 
 read `tune_log.txt` for output and errors. Use `tail -f tune_log.txt` to monitor live.
+Monitor live output with `tail -f tune_log.txt`.
