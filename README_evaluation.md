@@ -237,4 +237,7 @@ nohup python -u evaluation/tune_hyperparams.py > tune_log.txt 2>&1 &
 nohup python -u evaluation/run_evaluation.py > tune_log.txt 2>&1 &
 ```
 
+
+
+read `tune_log.txt` for output and errors. Use `tail -f tune_log.txt` to monitor live.
 Monitor live output with `tail -f tune_log.txt`.
